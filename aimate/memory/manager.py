@@ -81,3 +81,56 @@ class MemoryManager:
         block = f"[{target.upper()} MEMORY — {pct}% ({used}/{store.budget_chars} chars)]\n"
         block += "\n§\n".join(store.entries)
         return block
+
+
+# ---------------------------------------------------------------------------
+# Provider 模式 + 后台异步 prefetch / ingest
+# 借鉴思想：turn 前预取(recall)、turn 后写回(ingest)，异步不阻塞主循环。
+# AIMate 自研：线程池执行；门控由 memory.gate.is_trivial_prompt 决定是否值得。
+# ---------------------------------------------------------------------------
+from concurrent.futures import ThreadPoolExecutor
+
+
+class MemoryManagerAsync(MemoryManager):
+    """在 MemoryManager 基础上提供后台异步 prefetch/ingest + 记忆提供者钩子。"""
+
+    def __init__(self, workers: int = 2) -> None:
+        super().__init__()
+        self._pool = ThreadPoolExecutor(max_workers=workers)
+        self.providers: list[object] = []      # 可选外部记忆后端(Honcho/自研)
+
+    def add_provider(self, provider: object) -> None:
+        """注册一个记忆后端。内部约定：initialize()/prefetch()/ingest()/shutdown()。"""
+        if callable(getattr(provider, "initialize", None)):
+            provider.initialize()
+        self.providers.append(provider)
+
+    def prefetch(self, tenant_id: str, owner: str, text: str) -> None:
+        """会话/回合前预取：后台把相关记忆提前召回(不阻塞)。"""
+        from aimate.memory.gate import is_trivial_prompt
+        if is_trivial_prompt(text):
+            return
+        for p in self.providers:
+            fn = getattr(p, "prefetch", None)
+            if callable(fn):
+                self._pool.submit(_safe, fn, tenant_id, owner, text)
+
+    def ingest(self, tenant_id: str, owner: str, user_text: str, assistant_text: str) -> None:
+        """会话/回合后写回：后台抽取并持久化记忆。"""
+        from aimate.memory.gate import is_trivial_prompt
+        if not user_text or is_trivial_prompt(user_text):
+            return
+        for p in self.providers:
+            fn = getattr(p, "ingest", None)
+            if callable(fn):
+                self._pool.submit(_safe, fn, tenant_id, owner, user_text, assistant_text)
+
+    def shutdown(self, wait: bool = False) -> None:
+        self._pool.shutdown(wait=wait)
+
+
+def _safe(fn, *args):
+    try:
+        fn(*args)
+    except Exception:  # noqa: BLE001 后台任务异常不阻塞主流程
+        pass

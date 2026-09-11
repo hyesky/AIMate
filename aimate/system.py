@@ -6,7 +6,7 @@ from typing import Optional
 from aimate.agents.core import Agent, register
 from aimate.gateway.auth.auth import GatewayAuth
 from aimate.license.manager import LicenseManager
-from aimate.memory.manager import MemoryManager
+from aimate.memory.manager import MemoryManagerAsync
 from aimate.org.service import Department, Member, OrgService, Role
 from aimate.rag.engine import BM25Index, KnowledgeBase
 from aimate.security.audit import AuditLog
@@ -17,7 +17,7 @@ class System:
     def __init__(self) -> None:
         self.org = OrgService()
         self.auth = GatewayAuth(self.org)
-        self.memory = MemoryManager()
+        self.memory = MemoryManagerAsync(workers=2)
         self.skills = SkillStore()
         self.curator = Curator(self.skills)
         self.audit = AuditLog()

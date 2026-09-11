@@ -26,6 +26,7 @@ class ChatRequest:
 class GatewayAPI:
     def __init__(self, auth: GatewayAuth) -> None:
         self.auth = auth
+        self._external_tools: list[dict] = []
 
     # ---- 通用调度 ----
     def dispatch(self, principal: Principal, req: ChatRequest) -> dict:
@@ -56,3 +57,43 @@ class GatewayAPI:
             "content": [{"type": "text", "text": f"[AIMate 已接收指令: {prompt[:64]}]"}],
             "stop_reason": "end_turn",
         }
+
+    # -----------------------------------------------
+    # 工具 schema 归一化（借鉴思想：防严格 provider 拒收整个 toolset）
+    # 不同 provider 期望不同的工具 schema 形状：裸函数 schema 或已包成
+    # OpenAI tool({"type":"function","function":{...}})。再次包装会让严格
+    # provider(如 DeepSeek) 报 tools[N].function: missing field name 并拒收
+    # 整个请求。这里把两种形状归一到裸函数 schema，无法解析的丢弃并告警，
+    # 不影响其余工具。AIMate 自研实现（仅借鉴"该归一化"这一思想）。
+    # -----------------------------------------------
+    @staticmethod
+    def normalize_tool_schema(schema: Any) -> dict | None:
+        if not isinstance(schema, dict):
+            return None
+        # 解开已包成 OpenAI tool 的条目 -> 取内层 function
+        if schema.get("type") == "function" and isinstance(schema.get("function"), dict):
+            schema = schema["function"]
+            if not isinstance(schema, dict):
+                return None
+        name = schema.get("name", "")
+        if not name or not isinstance(name, str):
+            return None
+        return schema
+
+    # 动态工具集：给数字员工暴露的外部工具（技能、RAG 检索、命令等）。
+    def tool_schemas(self) -> list[dict]:
+        """返回规整后的工具 schema 列表（openai tool 包裹形式）。"""
+        out: list[dict] = []
+        for raw in self._external_tools:
+            norm = self.normalize_tool_schema(raw)
+            if norm is None:
+                continue  # 丢弃坏 schema，不拖垮整个 toolset
+            out.append({"type": "function", "function": norm})
+        return out
+
+    def register_tool(self, schema: dict) -> bool:
+        """注册一个外部工具（裸函数 schema 或已包装 tool schema）。"""
+        if self.normalize_tool_schema(schema) is None:
+            return False
+        self._external_tools.append(schema)
+        return True
