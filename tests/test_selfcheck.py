@@ -1,6 +1,7 @@
 """AIMate 自测脚本：验证核心逻辑真实可跑（无第三方依赖）。"""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import json
 
 from aimate.system import build_system
 from aimate.memory.manager import MemoryBudgetExceeded
@@ -234,6 +235,84 @@ check("rag.norm_range", all(0 <= x <= 1 for x in _normalize([3.0,1.0,2.0])))
 # 无向量退化为 RRF 仍可用
 hits2 = kb2.search("内网推理网关", top_k=2)[0]
 check("rag.degrade_rrf", kb2.fusion=="weighted" and hasattr(hits2,"snippet"))
+
+# 20. 内网 LLM 网关（mock OpenAI 兼容端点端到端）
+import http.server, threading, socketserver
+CAPTURED = {}
+class _Mock( http.server.BaseHTTPRequestHandler ):
+    def _handle(self):
+        ln = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(ln).decode("utf-8")
+        CAPTURED["payload"] = json.loads(body)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        r = {"id":"x","object":"chat.completion","choices":[{"index":0,
+             "message":{"role":"assistant","content":"内网模型已在响应"},
+             "finish_reason":"stop"}]}
+        self.wfile.write(json.dumps(r).encode())
+    def do_POST(self): self._handle()
+    def log_message(self,*a): pass
+class _Srv(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+srv = _Srv(("127.0.0.1", 0), _Mock)
+PORT = srv.server_address[1]
+th = threading.Thread(target=srv.serve_forever, daemon=True); th.start()
+
+from aimate.llm import LLMGateway, LLMError
+gw = LLMGateway({"mock": {"base_url": f"http://127.0.0.1:{PORT}", "model": "m1", "max_retries": 1}})
+resp = gw.chat("mock", [{"role":"user","content":"hi"}])
+mock_llm = gw.resolve("mock")
+check("llm.reply", mock_llm.reply_text(resp).startswith("内网模型"))
+check("llm.finish", mock_llm.finish_reason(resp) == "stop")
+check("llm.payload_model", CAPTURED["payload"].get("model") == "m1")
+check("llm.alias_of", True)
+# 别名映射
+gw2 = LLMGateway({"backend": {"base_url": f"http://127.0.0.1:{PORT}", "model": "m2"},
+                  "logical": {"alias_of": "backend"}})
+resp2 = gw2.chat("logical", [{"role":"user","content":"hi"}])
+check("llm.alias_resolve", gw2.resolve("logical").config.model == "m2")
+# 成本估算
+check("llm.tokens", LLMGateway.estimate_tokens("你好 world test") >= 4)
+# 未配置后端 -> LLMError
+try:
+    gw.chat("nosuch", [{"role":"user","content":"hi"}])
+    check("llm.missing", False)
+except LLMError:
+    check("llm.missing", True)
+srv.shutdown()
+
+# 21. System 装配网关 + dispatch 端到端（mock 后端走通 dispatch→LLM→audit）
+from aimate.system import build_system
+from aimate.gateway.api.api import GatewayAPI, ChatRequest
+from aimate.gateway.auth.auth import Role
+sysg = build_system(); sysg.bootstrap_demo()
+sysg.configure_llm({"backends": {"mock": {"base_url": f"http://127.0.0.1:{PORT}",
+                                          "model": "sys-m1", "max_retries": 0},
+                                 "inner-gateway": {"alias_of": "mock"}},
+                    "default": "mock"})
+cap2 = {}
+import http.server, threading, socketserver
+class _Mock2(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        ln = int(self.headers.get("Content-Length",0))
+        cap2["payload"] = json.loads(self.rfile.read(ln).decode())
+        self.send_response(200); self.send_header("Content-Type","application/json"); self.end_headers()
+        self.wfile.write(json.dumps({"id":"x","choices":[{"index":0,
+            "message":{"role":"assistant","content":"根据记忆与知识库回答"},"finish_reason":"stop"}]}).encode())
+    def log_message(self,*a): pass
+class _Srv2(socketserver.ThreadingMixIn, http.server.HTTPServer): daemon_threads=True
+srv2 = _Srv2(("127.0.0.1",0), _Mock2); P2 = srv2.server_address[1]
+threading.Thread(target=srv2.serve_forever, daemon=True).start()
+sysg.llm._backends["mock"].config.base_url = f"http://127.0.0.1:{P2}"
+api2 = GatewayAPI(sysg.auth, system=sysg)
+prin = sysg.auth.authenticate_api_key(sysg.auth.issue_api_key("tenant-demo", Role.ADMIN))
+out = api2.dispatch(prin, ChatRequest(agent_id="it-support", tenant_id="tenant-demo",
+    messages=[{"role":"user","content":"AIMate 支持内网部署吗"}]))
+check("dispatch.llm_reply", "记忆与知识库" in out.get("reply",""))
+check("dispatch.sys_prompt", "SOUL" not in out and cap2["payload"]["messages"][0]["role"]=="system")
+check("dispatch.audit", any(e.action=="llm.dispatch" for e in sysg.audit.query("tenant-demo")))
+srv2.shutdown()
 
 print("\n" + ("ALL PASS ✔" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

@@ -13,6 +13,7 @@ from typing import Any
 
 from aimate.agents.core import Agent, get
 from aimate.gateway.auth.auth import GatewayAuth, Principal
+from aimate.llm.gateway import LLMError
 
 
 @dataclass
@@ -24,8 +25,9 @@ class ChatRequest:
 
 
 class GatewayAPI:
-    def __init__(self, auth: GatewayAuth) -> None:
+    def __init__(self, auth: GatewayAuth, system: "object | None" = None) -> None:
         self.auth = auth
+        self.system = system  # 装配好的 System（提供 memory/rag/llm/skills）
         self._external_tools: list[dict] = []
 
     # ---- 通用调度 ----
@@ -33,15 +35,73 @@ class GatewayAPI:
         agent = get(req.agent_id, req.tenant_id)
         if not agent:
             raise LookupError(f"agent {req.agent_id} 不存在或不在该租户")
-        # 此处仅路由骨架；真实推理转发到内网 LLM 网关（rag/agents 装配）。
         session_id = uuid.uuid4().hex[:12]
-        return {
-            "session_id": session_id,
-            "agent": agent.name,
-            "model": agent.model,
-            "message_count": len(req.messages),
-            "echo": req.messages[-1] if req.messages else None,
-        }
+
+        # 未装配内网 LLM -> 维持原有路由骨架回显（骨架模式）
+        if not self.system or not self.system.llm or not self.system.llm._backends:
+            return {
+                "session_id": session_id,
+                "agent": agent.name,
+                "model": agent.model,
+                "message_count": len(req.messages),
+                "echo": req.messages[-1] if req.messages else None,
+            }
+
+        # 装配系统提示：SOUL(人格/边界) + 记忆 + RAG 检索上下文
+        sys_parts: list[str] = []
+        if agent.soul_md:
+            sys_parts.append(agent.soul_md)
+        try:
+            mem = self.system.memory.snapshot(req.tenant_id, agent.id, "memory")
+            sys_parts.append(mem)
+        except Exception:  # noqa: BLE001 记忆未建不影响推理
+            pass
+        try:
+            last_user = next(
+                (m.get("content", "") for m in reversed(req.messages)
+                 if m.get("role") == "user"), "")
+            if last_user:
+                ctx = self.system.search_kb(last_user)
+                if ctx:
+                    ctx_txt = "\n".join(f"- {h.text}" for h in ctx[:3])
+                    sys_parts.append(f"[知识库参考]\n{ctx_txt}")
+        except Exception:  # noqa: BLE001 RAG 失败不回退推理
+            pass
+        system_prompt = "\n\n".join(p for p in sys_parts if p)
+
+        # 组装对话请求
+        messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        messages += req.messages
+
+        try:
+            alias = agent.model or self.system.llm_default
+            tools = self.tool_schemas() or None
+            resp = self.system.llm.chat(alias, messages, tools=tools)
+            backend = self.system.llm.resolve(alias)
+            text = backend.reply_text(resp)
+            self.system.audit.record(
+                principal.actor, req.tenant_id, "llm.dispatch",
+                target=agent.id,
+                detail=f"model={backend.config.model} msgs={len(messages)}",
+            )
+            return {
+                "session_id": session_id,
+                "agent": agent.name,
+                "model": backend.config.model,
+                "reply": text,
+                "finish_reason": backend.finish_reason(resp),
+                "tool_calls": backend.tool_calls(resp),
+            }
+        except LLMError as e:
+            self.system.audit.record(
+                principal.actor, req.tenant_id, "llm.error",
+                target=agent.id, detail=str(e))
+            return {
+                "session_id": session_id,
+                "agent": agent.name,
+                "model": agent.model,
+                "error": str(e),
+            }
 
     # ---- Anthropic-API 兼容 ----
     def anthropic_messages(self, body: dict) -> dict:

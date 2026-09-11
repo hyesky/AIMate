@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "comment": "AIMate 内网 LLM 网关配置（信创/私有化 · 数据不出域）。客户按实际内网端点填写。",
+  "backends": {
+    "inner-gateway": {
+      "base_url": "http://127.0.0.1:8080",
+      "api_key": "",
+      "model": "qwen2.5:7b-instruct-q6_K",
+      "timeout": 120.0,
+      "max_retries": 2,
+      "temperature": 0.2
+    },
+    "vllm-dmz": {
+      "base_url": "http://10.0.0.10:8000",
+      "api_key": "change-me",
+      "model": "deepseek-r1:32b",
+      "timeout": 300.0,
+      "max_retries": 1,
+      "temperature": 0.1
+    }
+  },
+  "aliases": {
+    "inner-model": { "alias_of": "inner-gateway" },
+    "expert-model": { "alias_of": "vllm-dmz" }
+  },
+  "default": "inner-gateway"
+}

@@ -6,6 +6,7 @@ from typing import Optional
 from aimate.agents.core import Agent, register
 from aimate.gateway.auth.auth import GatewayAuth
 from aimate.license.manager import LicenseManager
+from aimate.llm.gateway import LLMError, LLMGateway
 from aimate.memory.manager import MemoryManagerAsync
 from aimate.org.service import Department, Member, OrgService, Role
 from aimate.rag.engine import BM25Index, KnowledgeBase
@@ -23,7 +24,21 @@ class System:
         self.audit = AuditLog()
         self.license_mgr = LicenseManager()
         self.rag = KnowledgeBase()          # 默认稀疏检索
+        self.llm = LLMGateway()             # 内网推理网关（默认空，按配置装配）
+        self.llm_config_path: Optional[str] = None
+        self.llm_default = "inner-gateway"
         self.demo_agent: Optional[Agent] = None
+
+    def configure_llm(self, path_or_dict) -> None:
+        """从 JSON 配置文件装配内网 LLM 网关。可传路径或直接传 dict。"""
+        import json
+        if isinstance(path_or_dict, str):
+            with open(path_or_dict, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        else:
+            cfg = path_or_dict
+        self.llm.configure(cfg.get("backends", {}))
+        self.llm_default = cfg.get("default", self.llm_default)
 
     def bootstrap_demo(self) -> None:
         tenant = "tenant-demo"
