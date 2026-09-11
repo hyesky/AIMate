@@ -53,3 +53,46 @@ OpenAI tool 嵌套)。一个坏 schema 会让严格 provider(如 DeepSeek) 以
 
 **AIMate 自研落地**：`aimate/gateway/api/api.py` — `normalize_tool_schema()`
 把两种形状归一到裸函数 schema；无法解析的丢弃并告警，不影响其余工具。
+
+---
+
+# OpenOcta 借鉴映射（Go → Python 自研，参考不照搬）
+
+> 参考对象：github.com/openocta/openocta（Apache-2.0，431 个 Go 文件 / ~6.7 万行）。
+> 思想引自 @summary Go 源码勘察（/tmp/octa），本文件只记录**借鉴的架构思想**与
+> **AIMate 原创实现位置**，不复制任何 Go 源码。两者对应模块逐一比对后落地。
+
+## A. RAG：归一化加权融合（超越纯 RRF）
+
+**借鉴思想**（`src/pkg/agent/knowledge/engine.go`）：
+稀疏(Bleve)+稠密(向量) 检索的融合不是只按排名(RRF)，而是**各自 min-max 归一化后
+按可配权重加权**（text 0.55 / vec 0.45）；先取 `limit×3` 候选**放大再重排**；
+摘要**按查询词在全文位置定位**截取而非从头截断；可**按 kinds(memory/rules/skills/tools)
+限定检索域**。
+
+**AIMate 自研落地**：`aimate/rag/engine.py` —
+`KnowledgeBase(search fusion='weighted'|'rrf')`；`_normalize`(归一化)、
+`_make_snippet`(查询词定位摘要)、`index(kind=...)`(kinds 过滤)、`candidate_mult`(召回放大)。
+保留 RRF 作无向量/降级路径，两者可切换。
+
+## B. 记忆库：内容安全 + 原子写 + 多目标
+
+**借鉴思想**（`src/pkg/agent/evolution/store.go` + `scan.go`）：
+- **内容安全扫描**：写入持久记忆前检测**提示注入**（覆盖指令/角色劫持/欺骗隐藏/
+  绕过限制等威胁模式）+ **不可见 Unicode**(零宽字符混淆)——否则污染后续每个
+  会话的系统提示，构成长期后门。
+- **原子写入**：temp 文件 + rename，防断电/崩溃损坏记忆文件。
+- **多目标扩展**：支持 `memory/user/soul/prompt`(可进化的系统提示+人格层)。
+- **写去重 + 命中歧义检测**：同内容不重复追加；replace 匹配多条时报"更具体"。
+
+**AIMate 自研落地**：
+- `aimate/security/prompt_injection.py`(新)— `find_threat`/`find_invisible_unicode`/
+  `scan`，中英双语威胁模式 + BOM 白名单。
+- `aimate/memory/manager.py` — `VALID_TARGETS_EXT`(soul/prompt)、add/replace 前置
+  `_scan` 安全拦截、add 去重；`FileMemoryStore`(新)— 原子写 + `set_limit` 逐目标限额 +
+  `persist`/`load_all` 多租户隔离。
+
+## 说明
+- 以上两条与既有的 **Hermes** 借鉴(记忆门控/Provider/learn/渐进披露/Curator/
+  工具 schema 归一化)互补：Hermes 偏**交互与策展**，OpenOcta 偏**检索与安全**。
+- 全部为**原创实现 + 53 项自测**逐条验证；不引入任何第三方依赖(M0 纯 stdlib)。

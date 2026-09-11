@@ -18,6 +18,7 @@ class Chunk:
     doc_id: str
     text: str
     meta: dict = field(default_factory=dict)
+    kind: str = "doc"
 
 
 class Embedder(Protocol):
@@ -31,6 +32,8 @@ class Hit:
     doc_id: str
     score: float
     text: str
+    snippet: str = ""
+    kind: str = ""
 
 
 def split_document(text: str, doc_id: str, chunk_chars: int = 800, overlap: int = 100) -> list[Chunk]:
@@ -85,7 +88,7 @@ class BM25Index:
                     tf + self.k1 * (1 - self.b + self.b * dl / max(self.avgdl, 1e-9))
                 )
             if s > 0:
-                scored.append(Hit(c.doc_id, s, c.text))
+                scored.append(Hit(c.doc_id, s, c.text, kind=c.kind))
         scored.sort(key=lambda h: h.score, reverse=True)
         return scored[:top_k]
 
@@ -115,7 +118,7 @@ class VectorIndex:
         scored: list[Hit] = []
         for c, v in zip(self.chunks, self.vectors):
             s = _cos(qv, v)
-            scored.append(Hit(c.doc_id, s, c.text))
+            scored.append(Hit(c.doc_id, s, c.text, kind=c.kind))
         scored.sort(key=lambda h: h.score, reverse=True)
         return scored[:top_k]
 
@@ -128,35 +131,139 @@ def _cos(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-class KnowledgeBase:
-    """RAG 门面：切分 + 混合检索。"""
+def _normalize(scores: list[float]) -> list[float]:
+    """Min-max 归一化到 [0,1]；全零则返回原值。对应开源实现 normalizeScores。"""
+    if not scores:
+        return scores
+    lo, hi = min(scores), max(scores)
+    if hi - lo < 1e-12:
+        return [0.0] * len(scores)
+    return [(s - lo) / (hi - lo) for s in scores]
 
-    def __init__(self, embedder: Optional[Embedder] = None) -> None:
+
+def _make_snippet(text: str, query: str, max_len: int = 240) -> str:
+    """按查询词在全文首次命中的位置前后截取摘要；无命中则从头截断。
+
+    借鉴开源实现 snippetFrom 的『定位命中词』设计思想，AIMate 自研算法。
+    """
+    t = text.strip()
+    if len(t) <= max_len:
+        return t
+    q = [w for w in re.findall(r"[a-zA-Z0-9_]+", query.lower()) if len(w) >= 2]
+    lower = t.lower()
+    pos = -1
+    for w in q:
+        i = lower.find(w)
+        if i >= 0 and (pos < 0 or i < pos):
+            pos = i
+    if pos < 0 or len(q) == 0:
+        return t[:max_len] + "…"
+    start = max(0, pos - 20)
+    if start + max_len > len(t):
+        start = max(0, len(t) - max_len)
+    out = t[start:start + max_len]
+    if start > 0:
+        out = "…" + out
+    if start + max_len < len(t):
+        out = out + "…"
+    return out
+
+
+class KnowledgeBase:
+    """RAG 门面：切分 + 混合检索。
+
+    召回策略（自研，借鉴开源 hybrid 引擎设计思想）：
+    - 稀疏(BM25) 与 稠密(余弦) 候选先各自归一化,再按可配权重加权融合
+      (text_weight / vec_weight)——比纯 RRF 更能反映真实相关度。
+    - 候选放大：先取 limit×k 再截断重排,稳定 top-k。
+    - kinds 过滤：可按文档类型(memory/rules/skills/tools)限定检索域。
+    - snippet：按查询词智能定位生成摘要。
+    RRF 仍保留,可通过 fusion='rrf' 选用。
+    """
+
+    def __init__(
+        self,
+        embedder: Optional[Embedder] = None,
+        text_weight: float = 0.55,
+        vec_weight: float = 0.45,
+        fusion: str = "weighted",
+    ) -> None:
         self.bm25 = BM25Index()
         self.vector: Optional[VectorIndex] = VectorIndex(embedder) if embedder else None
+        self.text_weight = text_weight
+        self.vec_weight = vec_weight
+        self.fusion = fusion  # 'weighted' | 'rrf'
 
     @property
     def has_vector(self) -> bool:
         return self.vector is not None
 
-    def index(self, text: str, doc_id: str, chunk_chars: int = 800) -> int:
+    def index(self, text: str, doc_id: str, chunk_chars: int = 800, kind: str = "doc") -> int:
         chunks = split_document(text, doc_id, chunk_chars)
+        for c in chunks:
+            c.kind = kind
         self.bm25.add(chunks)
         if self.vector:
             self.vector.add(chunks)
         return len(chunks)
 
-    def search(self, query: str, top_k: int = 5) -> list[Hit]:
-        sparse = self.bm25.search(query, top_k * 2)
-        if not self.vector:
-            return sparse[:top_k]
-        dense = self.vector.search(query, top_k)
-        # 简单 RRF 融合
-        combined: dict[str, float] = {}
+    @staticmethod
+    def _filtered(sparse: list[Hit], dense: list[Hit], kinds: set[str] | None) -> tuple[list[Hit], list[Hit]]:
+        if not kinds:
+            return sparse, dense
+        sparse = [h for h in sparse if h.kind in kinds]
+        dense = [h for h in dense if h.kind in kinds]
+        return sparse, dense
+
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        kinds: set[str] | None = None,
+        candidate_mult: int = 3,
+    ) -> list[Hit]:
+        if not query.strip():
+            return []
+        cand = top_k * candidate_mult
+        sparse = self.bm25.search(query, cand)
+        if self.vector:
+            dense = self.vector.search(query, cand)
+        else:
+            dense = []
+        sparse, dense = self._filtered(sparse, dense, kinds)
+
+        if self.fusion == "weighted" and self.vector and dense:
+            combined: dict[str, float] = {}
+            meta: dict[str, Hit] = {}
+            smap = {h.doc_id: h for h in sparse}
+            dmap = {h.doc_id: h for h in dense}
+            s_norm = _normalize([h.score for h in sparse])
+            d_norm = _normalize([h.score for h in dense])
+            for i, h in enumerate(sparse):
+                combined[h.doc_id] = self.text_weight * s_norm[i]
+                meta[h.doc_id] = h
+            for j, h in enumerate(dense):
+                combined[h.doc_id] = combined.get(h.doc_id, 0.0) + self.vec_weight * d_norm[j]
+                if h.doc_id not in meta:
+                    meta[h.doc_id] = h
+            order = sorted(combined, key=combined.get, reverse=True)
+            return [
+                self._decorate(meta[oid], query)
+                for oid in order[:top_k]
+                if oid in meta
+            ]
+
+        # 默认/降级：RRF 融合
+        merged: dict[str, float] = {}
         for rank, h in enumerate(sparse):
-            combined[h.doc_id] = combined.get(h.doc_id, 0) + 1 / (60 + rank)
+            merged[h.doc_id] = merged.get(h.doc_id, 0) + 1 / (60 + rank)
         for rank, h in enumerate(dense):
-            combined[h.doc_id] = combined.get(h.doc_id, 0) + 1 / (60 + rank)
-        order = sorted(combined, key=combined.get, reverse=True)
+            merged[h.doc_id] = merged.get(h.doc_id, 0) + 1 / (60 + rank)
+        order = sorted(merged, key=merged.get, reverse=True)
         m = {h.doc_id: h for h in [*sparse, *dense]}
-        return [m[oid] for oid in order[:top_k] if oid in m]
+        return [self._decorate(m[oid], query) for oid in order[:top_k] if oid in m]
+
+    @staticmethod
+    def _decorate(hit: Hit, query: str) -> Hit:
+        hit.snippet = _make_snippet(hit.text, query)
+        return hit

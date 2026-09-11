@@ -16,6 +16,10 @@ class MemoryBudgetExceeded(Exception):
     pass
 
 
+# 记忆目标维度：除 memory/user 外，支持可进化的系统提示与人格层（借鉴开源 SOUL/PROMPT 设计）
+VALID_TARGETS_EXT = {"memory", "user", "soul", "prompt"}
+
+
 @dataclass
 class MemoryStore:
     tenant_id: str
@@ -43,7 +47,10 @@ class MemoryManager:
         return self._stores[k]
 
     def add(self, tenant_id: str, owner: str, target: str, content: str) -> bool:
+        self._scan(content, target)
         store = self.ensure(tenant_id, owner, target, 2200)
+        if content in store.entries:
+            return True  # 去重：同内容不重复追加（借鉴开源 dedupe 容错思想）
         new_len = sum(len(e) for e in store.entries) + len(content)
         if new_len > store.budget_chars:
             raise MemoryBudgetExceeded(
@@ -56,6 +63,7 @@ class MemoryManager:
         self, tenant_id: str, owner: str, target: str, old_text: str, content: str
     ) -> bool:
         """用子串匹配唯一旧条目，替换为新内容。"""
+        self._scan(content, target)
         store = self.ensure(tenant_id, owner, target, 2200)
         matches = [i for i, e in enumerate(store.entries) if old_text in e]
         if len(matches) != 1:
@@ -81,6 +89,17 @@ class MemoryManager:
         block = f"[{target.upper()} MEMORY — {pct}% ({used}/{store.budget_chars} chars)]\n"
         block += "\n§\n".join(store.entries)
         return block
+
+    @staticmethod
+    def _scan(content: str, target: str) -> None:
+        """写入记忆前的安全扫描：拦截提示注入/不可见 Unicode（借鉴开源 scan 思想）。"""
+        from aimate.security.prompt_injection import InjectionRisk, scan
+        try:
+            scan(content)
+        except InjectionRisk as e:
+            raise ValueError(
+                f"记忆写入被安全策略拦截（{target}）：{e.reason} —— 请勿写入指令覆盖/混淆内容"
+            ) from e
 
 
 # ---------------------------------------------------------------------------
@@ -134,3 +153,75 @@ def _safe(fn, *args):
         fn(*args)
     except Exception:  # noqa: BLE001 后台任务异常不阻塞主流程
         pass
+
+
+# ---------------------------------------------------------------------------
+# 文件持久化记忆：原子写入（temp + rename 防断电损坏）+ 多目标文件映射
+# 借鉴开源 evolution/store.go 的原子写 & SOUL/PROMPT 目标设计，AIMate 自研实现。
+# ---------------------------------------------------------------------------
+import os
+import tempfile
+
+
+class FileMemoryStore:
+    """把记忆条目持久化为 $dir/{tenant}__{owner}/{MEMORY,USER,SOUL,PROMPT}.md。
+
+    - 原子写：先写同目录临时文件再 os.replace，崩溃时不会留下半截文件。
+    - 条目以 § 分隔。
+    - 逐目标独立字符上限（default_limit 兜底）。
+    """
+
+    _FILE_BY_TARGET = {
+        "memory": "MEMORY.md",
+        "user": "USER.md",
+        "soul": "SOUL.md",
+        "prompt": "PROMPT.md",
+    }
+
+    def __init__(self, directory: str, default_limit: int = 2200) -> None:
+        self.directory = os.path.abspath(directory)
+        self.default_limit = default_limit
+        self._limits: dict[str, int] = {}
+        os.makedirs(self.directory, exist_ok=True)
+
+    def set_limit(self, target: str, chars: int) -> None:
+        self._limits[target] = chars
+
+    def _limit(self, target: str) -> int:
+        return self._limits.get(target, self.default_limit)
+
+    def _base(self, tenant_id: str, owner: str) -> str:
+        return os.path.join(self.directory, _key_dir(tenant_id, owner))
+
+    def load_all(self, tenant_id: str, owner: str) -> dict[str, list[str]]:
+        """以 {target: 已持久化条目} 返回该 (tenant,owner) 的所有记忆。"""
+        base = self._base(tenant_id, owner)
+        out: dict[str, list[str]] = {}
+        for tgt, fname in self._FILE_BY_TARGET.items():
+            p = os.path.join(base, fname)
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    txt = f.read().strip()
+                out[tgt] = [s.strip() for s in txt.split("§") if s.strip()] if txt else []
+        return out
+
+    def persist(self, tenant_id: str, owner: str, target: str, entries: list[str]) -> None:
+        """原子写入该 (tenant,owner,target) 的条目。"""
+        base = self._base(tenant_id, owner)
+        os.makedirs(base, exist_ok=True)
+        path = os.path.join(base, self._FILE_BY_TARGET.get(target, "MEMORY.md"))
+        content = "\n§\n".join(entries)
+        fd, tmp = tempfile.mkstemp(dir=base, prefix=".evo-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
+
+def _key_dir(tenant_id: str, owner: str) -> str:
+    return f"{tenant_id}__{owner}"
