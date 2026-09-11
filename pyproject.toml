@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aimate"
+version = "0.1.0"
+description = "AIMate — 国产企业级 AI 智能体平台（数字员工 + 管理后端 + RAG + Workflow，私有化/内网部署）"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "AIMate Team" }]
+keywords = ["ai-agent", "rag", "workflow", "lm-bot", "信创", "私有化", "企业智能体"]
+
+dependencies = [
+    "aiohttp>=3.9",
+    "pydantic>=2.6",
+    "aiosqlite>=0.20",
+    "lark-oapi>=1.6.8",          # 飞书通道
+    "cryptography>=42.0",        # 通用加密（国密 SM2/3/4 将基于此做 SM 封装）
+]
+
+[project.optional-dependencies]
+# —— 国内 IM 通道（信创默认保留）——
+feishu = ["lark-oapi>=1.6.8", "qrcode>=7.4"]
+dingtalk = ["dingtalk-stream>=0.24", "alibabacloud-dingtalk>=2.2.42"]
+wecom = ["defusedxml>=0.7.1"]
+# —— 本地/内网推理（私有化）——
+local = ["mlx>=0.0.10"]          # Apple Silicon 端侧（参考路径 B' 国产落地）
+# —— 向量库/RAG（国产向量方案）——
+rag = ["numpy>=1.26", "rank-bm25>=0.2"]
+# —— 开发 ——
+dev = ["pytest>=8", "ruff>=0.4"]
+
+[project.scripts]
+aimate = "aimate.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aimate*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
