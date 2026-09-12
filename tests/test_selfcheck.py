@@ -314,5 +314,31 @@ check("dispatch.sys_prompt", "SOUL" not in out and cap2["payload"]["messages"][0
 check("dispatch.audit", any(e.action=="llm.dispatch" for e in sysg.audit.query("tenant-demo")))
 srv2.shutdown()
 
+# 22. 浏览器管控台（纯 stdlib HTTP 端到端）
+from aimate.web.console import serve as console_serve
+from aimate.system import build_system as _bs
+syc = _bs(); syc.bootstrap_demo()
+csrv = console_serve("127.0.0.1", 0, system=syc, agent_ids=[syc.demo_agent.id])
+CPORT = csrv.server_address[1]
+threading.Thread(target=csrv.serve_forever, daemon=True).start()
+import urllib.request
+def _get(p):
+    import urllib.request
+    return json.load(urllib.request.urlopen(f"http://127.0.0.1:{CPORT}{p}"))
+def _post(p, body):
+    r = urllib.request.Request(f"http://127.0.0.1:{CPORT}{p}", data=json.dumps(body).encode(),
+                               headers={"Content-Type": "application/json"})
+    return json.load(urllib.request.urlopen(r))
+check("console.page", "AIMate 管控台" in urllib.request.urlopen(f"http://127.0.0.1:{CPORT}/").read().decode())
+info = _get("/api/info")
+check("console.info", info["agents"] == 1 and "inner-gateway" in info["default_model"])
+ag = _get("/api/agents")
+check("console.agents", ag["agents"][0]["id"] == "it-support")
+kb = _post("/api/kb/search", {"q": "内网部署"})
+check("console.kb", len(kb["hits"]) >= 1 and kb["hits"][0]["kind"] == "doc")
+ch = _post("/api/chat", {"agent_id": "it-support", "messages": [{"role": "user", "content": "hi"}]})
+check("console.chat_skeleton", "echo" in ch and ch["agent"] == "IT 支持专家")
+csrv.shutdown()
+
 print("\n" + ("ALL PASS ✔" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

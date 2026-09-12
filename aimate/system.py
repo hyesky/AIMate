@@ -83,6 +83,10 @@ class System:
                        "数字员工可绑定内网推理网关。多租户记忆与技能按组织隔离。",
                        doc_id="doc-aimate")
 
+        # 网关 API（供管控台/外部接入复用）
+        from aimate.gateway.api.api import GatewayAPI
+        self.api = GatewayAPI(self.auth, system=self)
+
     def search_kb(self, query: str):
         return self.rag.search(query, top_k=3)
 

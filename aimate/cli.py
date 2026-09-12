@@ -106,12 +106,43 @@ def cmd_gateway_test(args) -> int:
         return 1
 
 
+def cmd_console(args) -> int:
+    """启动浏览器管控台（信创首发 · 纯 stdlib HTTP）。"""
+    from aimate.system import build_system
+    from aimate.web.console import serve
+
+    sys_ = build_system()
+    sys_.bootstrap_demo()
+    cfg = getattr(args, "llm_config", None)
+    if cfg:
+        sys_.configure_llm(cfg)
+        print(f"[AIMate] 已装配内网 LLM 网关: {cfg}")
+    else:
+        print("[AIMate] 未装配内网 LLM（分发为骨架回显）。"
+              "--llm-config 接入内网模型后即可真实对话。")
+
+    agent_ids = sys_.api and [sys_.demo_agent.id] or []
+    host, port = getattr(args, "host", "127.0.0.1"), getattr(args, "port", 8900)
+    srv = serve(host, port, system=sys_, agent_ids=agent_ids)
+    print(f"[AIMate] 🔗 管控台已启动:  http://{host}:{port}")
+    print("[AIMate] 浏览器打开即可操作数字员工 / RAG / 审计。Ctrl+C 退出。")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[AIMate] 已退出。")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="aimate", description="AIMate 国产企业级 AI 智能体平台")
     sub = p.add_subparsers(dest="cmd")
     sub.add_parser("init", help="初始化并装配演示数据")
     p_server = sub.add_parser("server", help="启动服务端（演示骨架）")
     p_server.add_argument("--llm-config", help="内网 LLM 网关 JSON 配置路径")
+    p_console = sub.add_parser("console", help="启动浏览器管控台（信创首发）")
+    p_console.add_argument("--llm-config", help="内网 LLM 网关 JSON 配置路径")
+    p_console.add_argument("--host", default="127.0.0.1", help="监听地址")
+    p_console.add_argument("--port", type=int, default=8900, help="监听端口")
     p_learn = sub.add_parser("learn", help="自进化：把来源沉淀为技能(prompt)")
     p_learn.add_argument("source", help="技能来源：目录/URL/工作流/粘贴资料")
     p_learn.add_argument("--context", help="附加上下文(如'本次会话刚做完的事')")
@@ -122,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_init(args)
     if args.cmd == "server":
         return cmd_server(args)
+    if args.cmd == "console":
+        return cmd_console(args)
     if args.cmd == "learn":
         return cmd_learn(args)
     if args.cmd == "gateway:test":
