@@ -48,15 +48,26 @@ pip install -e ".[dev]"
 # 初始化配置
 aimate init
 
-# 启动服务端（网关 + 管理 API）
-aimate server
+# 启动浏览器管控台（信创首发 · 纯 stdlib，无需前端工具链）
+aimate console --port 8900
+
+# 接入内网模型后即可真实对话（示例：本机 llama-server 的 Ornith-35B）
+#   vi configs/llm.gateway.json   # 填 base_url/model/api_key
+aimate console --llm-config configs/llm.gateway.json
+
+# 验证内网网关连通性
+aimate gateway:test --config configs/llm.gateway.json
 ```
+
+浏览器打开 http://127.0.0.1:8900 即可操作数字员工 / RAG / 审计。
 
 ## 文档
 
 - `/docs/architecture.md` — 架构设计
 - `/docs/compliance.md` — 信创合规与开源组件说明
 - `/docs/roadmap.md` — 里程碑与人月拆分
+- `/docs/llm-gateway.md` — 内网 LLM 推理网关（信创 · 数据不出域）
+- `/docs/console.md` — 浏览器管控台（纯 stdlib）
 
 ## 许可
 

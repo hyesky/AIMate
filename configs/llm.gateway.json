@@ -5,23 +5,12 @@
     "inner-gateway": {
       "base_url": "http://127.0.0.1:8080",
       "api_key": "",
-      "model": "qwen2.5:7b-instruct-q6_K",
-      "timeout": 120.0,
-      "max_retries": 2,
-      "temperature": 0.2
-    },
-    "vllm-dmz": {
-      "base_url": "http://10.0.0.10:8000",
-      "api_key": "change-me",
-      "model": "deepseek-r1:32b",
+      "model": "Ornith-1.5-35B-A3B-CRACK-Q3_K_M.gguf",
       "timeout": 300.0,
       "max_retries": 1,
-      "temperature": 0.1
+      "temperature": 0.3
     }
   },
-  "aliases": {
-    "inner-model": { "alias_of": "inner-gateway" },
-    "expert-model": { "alias_of": "vllm-dmz" }
-  },
+  "aliases": {},
   "default": "inner-gateway"
 }
