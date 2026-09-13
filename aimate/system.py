@@ -12,6 +12,7 @@ from aimate.org.service import Department, Member, OrgService, Role
 from aimate.rag.engine import BM25Index, KnowledgeBase
 from aimate.security.audit import AuditLog
 from aimate.skills.store import Curator, Skill, SkillStatus, SkillStore
+from aimate.mcp.registry import McpRegistry
 
 
 class System:
@@ -25,6 +26,7 @@ class System:
         self.license_mgr = LicenseManager()
         self.rag = KnowledgeBase()          # 默认稀疏检索
         self.llm = LLMGateway()             # 内网推理网关（默认空，按配置装配）
+        self.mcp = McpRegistry()            # 内网 MCP 工具库（stdio，数据不出域）
         self.llm_config_path: Optional[str] = None
         self.llm_default = "inner-gateway"
         self.demo_agent: Optional[Agent] = None
@@ -89,6 +91,31 @@ class System:
 
     def search_kb(self, query: str):
         return self.rag.search(query, top_k=3)
+
+    # ---- 知识库管理（管控台管理端点复用） ----
+    def list_kb_docs(self) -> list[dict]:
+        """枚举已索引的文档（按 doc_id 聚合 Chunk 计数与抽样文本）。"""
+        docs: dict[str, dict] = {}
+        for c in self.rag.bm25.docs:
+            d = docs.setdefault(c.doc_id, {"doc_id": c.doc_id, "chunks": 0,
+                                           "kind": c.kind, "sample": c.text[:120]})
+            d["chunks"] += 1
+            if not d["sample"]:
+                d["sample"] = c.text[:120]
+        return [docs[k] for k in sorted(docs)]
+
+    def add_kb_doc(self, doc_id: str, text: str, kind: str = "doc") -> int:
+        return self.rag.index(text, doc_id=doc_id, kind=kind)
+
+    def clear_kb(self) -> int:
+        n = len(self.rag.bm25.docs)
+        self.rag.bm25.docs.clear()
+        self.rag.bm25.df.clear()
+        self.rag.bm25.avgdl = 0.0
+        if self.rag.vector:
+            self.rag.vector.chunks.clear()
+            self.rag.vector.vectors.clear()
+        return n
 
 
 def build_system() -> System:

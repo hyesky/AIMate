@@ -340,5 +340,63 @@ ch = _post("/api/chat", {"agent_id": "it-support", "messages": [{"role": "user",
 check("console.chat_skeleton", "echo" in ch and ch["agent"] == "IT 支持专家")
 csrv.shutdown()
 
+# 23. 知识库 / 大模型配置 / 技能库 / MCP 工具库（4 大管理模块真实跑）
+# —— 知识库管理
+from aimate.web.console import serve as console_serve
+from aimate.system import build_system as _bs
+syc2 = _bs(); syc2.bootstrap_demo()
+n = syc2.add_kb_doc("doc-ops", "AIMate 运维手册：请用 HTTPS 网关；数据不出域；RAG 支持混合检索。", "rules")
+check("kb.manage.add", n >= 1 and any(d["doc_id"] == "doc-ops" for d in syc2.list_kb_docs()))
+hit = syc2.search_kb("HTTPS 网关")[0]
+check("kb.manage.search", hit.kind == "rules" and "HTTPS" in hit.text)
+cleared = syc2.clear_kb()
+check("kb.manage.clear", cleared >= 1 and syc2.list_kb_docs() == [])
+
+# —— 技能库 CRUD
+from aimate.skills.store import SkillStatus
+syc2.skills.create(__import__("aimate.skills.store", fromlist=["Skill"]).Skill(
+    name="ops_runbook", tenant_id="tenant-demo", description="运维手册技能",
+    trigger="问运维时", status=SkillStatus.PUBLISHED))
+check("skills.crud.add", syc2.skills.get("tenant-demo", "ops_runbook") is not None)
+syc2.skills.set_status("tenant-demo", "ops_runbook", SkillStatus.DRAFT)
+check("skills.crud.status", syc2.skills.get("tenant-demo", "ops_runbook").status == SkillStatus.DRAFT)
+
+# —— MCP 工具库（纯 stdlib JSON-RPC over stdio，起 demo server 真调）
+from aimate.mcp import McpRegistry
+reg = McpRegistry()
+reg.add_server("demo", ["python3", "-m", "aimate.mcp.demo"], timeout=6.0)
+check("mcp.connect", any(s["name"] == "demo" and s["ready"] for s in reg.list_servers()))
+check("mcp.tools", reg.call_tool("demo__sum", {"numbers": [1, 2, 3]}) == "总和 = 6")
+check("mcp.schema", any(f["function"]["name"] == "sum" for f in reg.tool_schemas()))
+reg.close_all()
+
+# —— 管控台管理端点 e2e（KB/LLM/Skills/MCP 走 HTTP）
+syc3 = _bs(); syc3.bootstrap_demo()
+csrv3 = console_serve("127.0.0.1", 0, system=syc3, agent_ids=[syc3.demo_agent.id])
+C3 = csrv3.server_address[1]
+threading.Thread(target=csrv3.serve_forever, daemon=True).start()
+def _g3(p): return json.load(urllib.request.urlopen(f"http://127.0.0.1:{C3}{p}"))
+def _p3(p, body):
+    r = urllib.request.Request(f"http://127.0.0.1:{C3}{p}", data=json.dumps(body).encode(),
+                               headers={"Content-Type": "application/json"})
+    return json.load(urllib.request.urlopen(r))
+kbd = _g3("/api/kb/docs")
+check("console.kb.docs", any(d["doc_id"] == "doc-aimate" for d in kbd["docs"]))
+llm = _g3("/api/llm")
+check("console.llm.list", isinstance(llm.get("backends"), list) and "default" in llm)
+# 注册一个 mock 内网后端（用 HTTP mock server：不真连，仅验证注册路径）
+syc3.llm.configure({"mock2": {"base_url": "http://127.0.0.1:8080", "model": "m2"}})
+llm2 = _g3("/api/llm")
+check("console.llm.add", any(b["alias"] == "mock2" for b in llm2["backends"]))
+sk = _p3("/api/skills", {"name": "ui_skill", "description": "管控台创建", "status": "published"})
+check("console.skills.add", sk["name"] == "ui_skill")
+skl = _g3("/api/skills")
+check("console.skills.list", any(s["name"] == "ui_skill" for s in skl["skills"]))
+mcp_r = _p3("/api/mcp", {"name": "demo", "cmd": ["python3", "-m", "aimate.mcp.demo"]})
+check("console.mcp.add", mcp_r["name"] == "demo" and len(mcp_r["tools"]) == 3)
+mcpc = _p3("/api/mcp/call", {"tool": "demo__sum", "args": {"numbers": [10, 20, 30]}})
+check("console.mcp.call", mcpc["result"] == "总和 = 60")
+csrv3.shutdown()
+
 print("\n" + ("ALL PASS ✔" if not fails else f"{len(fails)} FAILED: {fails}"))
 sys.exit(1 if fails else 0)

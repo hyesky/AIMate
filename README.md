@@ -59,7 +59,9 @@ aimate console --llm-config configs/llm.gateway.json
 aimate gateway:test --config configs/llm.gateway.json
 ```
 
-浏览器打开 http://127.0.0.1:8900 即可操作数字员工 / RAG / 审计。
+浏览器打开 http://127.0.0.1:8900 即可操作数字员工 / 知识库 / 大模型配置 / 技能库 / MCP 工具库 / 审计。
+
+> 管控台界面为 Hermes-Desktop 风格：左侧功能 rail + 各管理面板卡片，全程内联 JS、零第三方前端依赖。MCP 工具库走 stdio（数据不出域），可对接任意 JSON-RPC-over-stdio 工具服务。
 
 ## 文档
 
@@ -67,7 +69,9 @@ aimate gateway:test --config configs/llm.gateway.json
 - `/docs/compliance.md` — 信创合规与开源组件说明
 - `/docs/roadmap.md` — 里程碑与人月拆分
 - `/docs/llm-gateway.md` — 内网 LLM 推理网关（信创 · 数据不出域）
-- `/docs/console.md` — 浏览器管控台（纯 stdlib）
+- `/docs/console.md` — 浏览器管控台（纯 stdlib · Hermes-Desktop 风格界面）
+- `/docs/mcp.md` — 内网 MCP 工具库（纯 stdlib · JSON-RPC over stdio）
+- `/docs/screenshots/` — 管控台界面截图
 
 ## 许可
 
