@@ -32,70 +32,119 @@ from aimate.gateway.api.api import ChatRequest
 from aimate.llm.gateway import LLMError
 from aimate.skills.store import SkillStatus
 
-_CSS = """
-:root{--bg:#0b0e17;--bg2:#11151f;--panel:#141a28;--panel2:#1a2134;--line:#232b3f;
---fg:#e8edf7;--mut:#7c89a8;--acc:#5b8cff;--acc2:#7aa2ff;--ok:#3ecf8e;--warn:#f5b84b;--err:#ff6b6b}
+_CSS = """\
+/* ── AIMate console · Hermes-Desktop 设计语言 ──
+   提取自 apps/desktop/src/styles.css + DESIGN.md 的真实 token（浅色）:
+   - chrome 背景 #f8faff / 侧栏 #f3f7ff / 卡片 #ffffff
+   - 唯一强调色 Nous 蓝 #0053fd
+   - flat not boxed: 面板不套面板, 用留白 + 单根头发丝线(--stroke-tertiary=前景7%alpha)
+   - 悬停/激活用极浅的 accent color-mix, 而非粗边框
+   - 字体: SF Pro/Segoe UI 无衬线 + Menlo/Monaco/SF Mono 等宽
+   - 克制圆角(radius scalar≈0.2), 输入框靠内阴影+细边, focus 时边框才显色 */
+:root{
+  --ui-base:#17171a;
+  --ui-accent:#0053fd;                    /* Nous 蓝 — 唯一强调色 */
+  --ui-warm:#cf806d;
+  --ui-red:#cf2d56; --ui-orange:#db704b; --ui-yellow:#c08532;
+  --ui-green:#1f8a65; --ui-cyan:#4c7f8c; --ui-purple:#9e94d5;
+  /* 语义色板 */
+  --ui-text-primary:color-mix(in srgb,var(--ui-base) 94%,transparent);
+  --ui-text-secondary:color-mix(in srgb,var(--ui-base) 74%,transparent);
+  --ui-text-tertiary:color-mix(in srgb,var(--ui-base) 54%,transparent);
+  --ui-text-quaternary:color-mix(in srgb,var(--ui-base) 36%,transparent);
+  --ui-stroke-secondary:color-mix(in srgb,var(--ui-base) 7%,transparent);
+  --ui-stroke-tertiary:color-mix(in srgb,var(--ui-base) 5%,transparent);
+  --ui-stroke-quaternary:color-mix(in srgb,var(--ui-base) 3%,transparent);
+  --ui-bg-chrome:#f8faff;
+  --ui-bg-sidebar:#f3f7ff;
+  --ui-bg-card:#ffffff;
+  --ui-row-hover:color-mix(in srgb,var(--ui-accent) 4%,transparent);
+  --ui-row-active:color-mix(in srgb,var(--ui-accent) 8%,transparent);
+  --ui-control-active:color-mix(in srgb,var(--ui-accent) 8%,transparent);
+  --ui-bell:#fefffe;
+  --shadow-nous:0 .125rem .25rem -.125rem rgba(0,0,0,.07),0 .5rem .75rem -.375rem rgba(0,0,0,.06),0 1.25rem 1.75rem -.875rem rgba(0,0,0,.06);
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;display:flex;height:100vh;overflow:hidden}
-/* 左侧导航 rail（借鉴 Hermes desktop 的 profile rail 布局） */
-nav{width:64px;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px;flex-shrink:0}
-nav .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#5b8cff,#7a5bff);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;margin-bottom:12px}
-nav button{width:44px;height:44px;border:0;background:transparent;color:var(--mut);border-radius:10px;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center}
-nav button:hover{background:var(--panel);color:var(--fg)}
-nav button.on{background:var(--panel2);color:var(--acc)}
-nav .bottom{margin-top:auto}
-nav .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);margin-bottom:4px}
+html,body{height:100%}
+body{background:var(--ui-bg-chrome);color:var(--ui-text-primary);
+  font:14px/1.6 'Segoe WPC','Segoe UI',-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif,'PingFang SC','Microsoft YaHei';
+  display:flex;height:100vh;overflow:hidden;color-scheme:light}
+/* 左侧导航 rail — Hermes profile/session rail 形态: 极窄、浅侧栏、无边框盒子 */
+nav{width:60px;background:var(--ui-bg-sidebar);display:flex;flex-direction:column;align-items:center;padding:16px 0 12px;gap:2px;flex-shrink:0;
+  border-right:1px solid var(--ui-stroke-tertiary)}
+nav .logo{width:34px;height:34px;border-radius:8px;background:#ffffff;border:1px solid var(--ui-stroke-tertiary);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--ui-accent);margin-bottom:14px}
+nav button{width:40px;height:40px;border:0;background:transparent;color:var(--ui-text-tertiary);border-radius:8px;cursor:pointer;
+  font-size:18px;display:flex;align-items:center;justify-content:center;transition:background .1s,color .1s}
+nav button:hover{background:var(--ui-row-hover);color:var(--ui-text-primary)}
+nav button.on{background:var(--ui-row-active);color:var(--ui-accent)}
+nav .bottom{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav .dot{width:8px;height:8px;border-radius:50%;background:var(--ui-green);box-shadow:0 0 0 3px color-mix(in srgb,var(--ui-green) 18%,transparent);margin-bottom:6px}
 /* 主区 */
-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
-header{display:flex;align-items:center;gap:14px;padding:12px 22px;border-bottom:1px solid var(--line);background:var(--bg2)}
-header h1{font-size:16px;letter-spacing:.4px}
-header .crumb{color:var(--mut);font-size:12px}
+main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+/* 顶部标题栏 — Hermes titlebar: 平直、无粗边、只一根头发丝 */
+header{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid var(--ui-stroke-tertiary);background:var(--ui-bg-chrome)}
+header h1{font-size:15px;letter-spacing:.3px;font-weight:650}
+header .crumb{color:var(--ui-text-tertiary);font-size:12px}
 header .spacer{flex:1}
-.chip{font-size:11px;padding:2px 10px;border-radius:12px;border:1px solid var(--line);color:var(--mut)}
-.chip.ok{color:var(--ok);border-color:#1d3a2f;background:#0f241c}
-.chip.warn{color:var(--warn);border-color:#3a2f1d;background:#241f0f}
-.page{flex:1;overflow:auto;padding:20px 24px;display:none}
+.chip{font-size:11px;padding:2px 11px;border-radius:999px;border:1px solid var(--ui-stroke-tertiary);color:var(--ui-text-secondary);background:#fff}
+.chip.ok{color:var(--ui-green);border-color:color-mix(in srgb,var(--ui-green) 30%,transparent);background:color-mix(in srgb,var(--ui-green) 6%,#fff)}
+.chip.warn{color:var(--ui-orange);border-color:color-mix(in srgb,var(--ui-orange) 30%,transparent);background:color-mix(in srgb,var(--ui-orange) 6%,#fff)}
+/* 页面 */
+.page{flex:1;overflow:auto;padding:22px 28px;display:none}
 .page.on{display:block}
-h2{font-size:14px;margin-bottom:4px}
-.pgsub{color:var(--mut);font-size:12px;margin-bottom:16px}
+h2{font-size:13px;font-weight:650;color:var(--ui-text-secondary);margin-bottom:4px}
+.pgsub{color:var(--ui-text-tertiary);font-size:12px;margin-bottom:16px}
 .bar{display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
-.card h3{font-size:13px;color:var(--acc2);margin-bottom:10px}
-.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);flex-wrap:wrap}
+/* flat not boxed: 面板=白卡片只一根头发丝, 面板内不再套有边框的盒子 */
+.card{background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+.card h3{font-size:13px;font-weight:650;color:var(--ui-accent);margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--ui-stroke-quaternary);flex-wrap:wrap}
 .row:last-child{border:0}
-.row .nm{font-weight:600;flex:1}
-.row .id{color:var(--mut);font-size:11px}
+.row .nm{font-weight:600;flex:1;color:var(--ui-text-primary)}
+.row .id{color:var(--ui-text-tertiary);font-size:11px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-input,textarea{background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:9px 12px;outline:none;font-family:inherit;font-size:13px}
-input:focus,textarea:focus{border-color:var(--acc)}
+/* 输入控件 — Hermes controlVariants: 透明底、细边、内阴影, focus 边框显色 */
+input,textarea,select{background:var(--ui-bg-card);border:1px solid color-mix(in srgb,var(--ui-accent) 7%,transparent);
+  color:var(--ui-text-primary);border-radius:6px;padding:8px 11px;outline:none;font-family:inherit;font-size:13px;
+  box-shadow:inset 0 1px 1px rgba(0,0,0,.08)}
+input:focus,textarea:focus,select:focus{border-color:var(--ui-accent);box-shadow:0 0 0 1px var(--ui-accent) inset}
 textarea{resize:vertical}
 input[type=text],input:not([type]){min-width:180px;flex:1}
-button{background:var(--acc);border:0;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:600;font-size:13px}
+/* 按钮 — 一个 Button 组件, variant 驱动 */
+button{background:var(--ui-accent);border:0;color:#fcfcfc;border-radius:6px;padding:7px 14px;cursor:pointer;font-weight:600;font-size:13px;font-family:inherit;transition:filter .1s}
+button:hover{filter:brightness(1.08)}
 button:disabled{opacity:.45;cursor:default}
-button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
-button.danger{background:#3a1620;color:var(--err);border:1px solid #5c2233}
-button.mini{padding:4px 10px;font-size:12px}
-.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
-.badge{display:inline-block;padding:1px 9px;border-radius:11px;font-size:11px}
-.badge.ok{background:#0f241c;color:var(--ok)}.badge.down{background:#301820;color:var(--err)}
-.badge.warn{background:#241f0f;color:var(--warn)}.badge.dim{background:var(--panel2);color:var(--mut)}
-.ok{color:var(--ok)}.err{color:var(--err)}.mut{color:var(--mut)}.small{font-size:12px;color:var(--mut)}
-.kv{display:flex;gap:8px;padding:4px 0;font-size:12px}
-.kv .k{color:var(--mut);min-width:74px;flex-shrink:0}
-.agent{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--bg2)}
-.agent.active{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
-.agent .avatar{width:36px;height:36px;border-radius:9px;background:var(--panel2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-#chatbox{display:flex;flex-direction:column;height:calc(100vh - 60px)}
+button.ghost{background:transparent;border:1px solid var(--ui-stroke-secondary);color:var(--ui-text-primary)}
+button.ghost:hover{background:var(--ui-row-hover);filter:none}
+button.danger{background:color-mix(in srgb,var(--ui-red) 9%,#fff);color:var(--ui-red);border:1px solid color-mix(in srgb,var(--ui-red) 26%,transparent)}
+button.danger:hover{background:color-mix(in srgb,var(--ui-red) 15%,#fff);filter:none}
+button.mini{padding:3px 10px;font-size:12px}
+.mono{font-family:Menlo,Monaco,'SF Mono',ui-monospace,monospace;font-size:12px}
+.badge{display:inline-block;padding:1px 9px;border-radius:999px;font-size:11px;background:color-mix(in srgb,var(--ui-base) 5%,transparent);color:var(--ui-text-secondary)}
+.badge.ok{background:color-mix(in srgb,var(--ui-green) 10%,transparent);color:var(--ui-green)}
+.badge.down{background:color-mix(in srgb,var(--ui-red) 9%,transparent);color:var(--ui-red)}
+.badge.warn{background:color-mix(in srgb,var(--ui-orange) 10%,transparent);color:var(--ui-orange)}
+.badge.dim{background:color-mix(in srgb,var(--ui-base) 5%,transparent);color:var(--ui-text-tertiary)}
+.ok{color:var(--ui-green)}.err{color:var(--ui-red)}.mut{color:var(--ui-text-tertiary)}.small{font-size:12px;color:var(--ui-text-tertiary)}
+.kv{display:flex;gap:8px;padding:4px 0;font-size:12px;align-items:baseline}
+.kv .k{color:var(--ui-text-tertiary);min-width:56px;flex-shrink:0}
+.agent{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--ui-stroke-tertiary);border-radius:10px;margin-bottom:8px;cursor:pointer;background:#fff}
+.agent:hover{background:var(--ui-row-hover)}
+.agent.active{border-color:var(--ui-accent);box-shadow:0 0 0 1px var(--ui-accent) inset}
+.agent .avatar{width:34px;height:34px;border-radius:8px;background:var(--ui-bg-sidebar);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+#chatbox{display:flex;flex-direction:column;height:calc(100vh - 54px)}
 #log{flex:1;overflow:auto;padding:6px;display:flex;flex-direction:column;gap:12px}
-.msg{max-width:82%;padding:10px 14px;border-radius:12px;white-space:pre-wrap;word-break:break-word;line-height:1.55}
-.msg.u{align-self:flex-end;background:#24365c;border-bottom-right-radius:4px}
-.msg.a{align-self:flex-start;background:var(--panel2);border-bottom-left-radius:4px}
-.msg .who{font-size:11px;color:var(--mut);margin-bottom:4px}
+.msg{max-width:82%;padding:9px 14px;border-radius:12px;white-space:pre-wrap;word-break:break-word;line-height:1.55}
+.msg.u{align-self:flex-end;background:color-mix(in srgb,var(--ui-accent) 66%,#fff);color:#fff;border-bottom-right-radius:4px}
+.msg.a{align-self:flex-start;background:color-mix(in srgb,var(--ui-base) 5%,#fff);border:1px solid var(--ui-stroke-quaternary);border-bottom-left-radius:4px}
+.msg .who{font-size:11px;color:var(--ui-text-tertiary);margin-bottom:4px}
+.msg.u .who{color:rgba(255,255,255,.78)}
 #inputrow{display:flex;gap:8px;margin-top:12px}
-#audit{font-family:ui-monospace,Menlo,monospace;font-size:11px}
-.stat{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--line)}
-.stat:last-child{border:0}.stat b{color:var(--fg)}
-code.inline{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12px}
+#audit{font-family:Menlo,Monaco,'SF Mono',ui-monospace,monospace;font-size:11px}
+.stat{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--ui-stroke-quaternary)}
+.stat:last-child{border:0}.stat b{color:var(--ui-text-primary)}
+code.inline{background:color-mix(in srgb,var(--ui-base) 5%,transparent);padding:1px 6px;border-radius:5px;font-size:12px;font-family:Menlo,Monaco,'SF Mono',ui-monospace,monospace}
 """
 
 _JS = r"""
@@ -103,7 +152,7 @@ let cur=null;
 const $=s=>document.querySelector(s);
 function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML;}
 function badge(b){return b?'<span class="badge ok">在线</span>':'<span class="badge down">离线</span>';}
-function toast(m){const e=document.createElement('div');e.textContent=m;e.style.cssText='position:fixed;bottom:20px;right:20px;background:#1a2134;border:1px solid var(--acc);padding:10px 18px;border-radius:10px;z-index:99';document.body.appendChild(e);setTimeout(()=>e.remove(),2500);}
+function toast(m){const e=document.createElement('div');e.textContent=m;e.style.cssText='position:fixed;bottom:20px;right:20px;background:#ffffff;border:1px solid var(--ui-stroke-secondary);box-shadow:var(--shadow-nous);padding:10px 18px;border-radius:10px;z-index:99';document.body.appendChild(e);setTimeout(()=>e.remove(),2500);}
 async function jf(url,body){const o={headers:{'Content-Type':'application/json'}};if(body)o.method='POST',o.body=JSON.stringify(body);const r=await fetch(url,o);let d={};try{d=await r.json()}catch(e){}if(!r.ok)throw new Error(d.error||('请求失败 '+r.status));return d;}
 function nav(){document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));const pg=document.getElementById(b.dataset.page+'page');if(pg)pg.classList.add('on');if(b.dataset.page==='chat')loadChat();if(b.dataset.page==='kb')loadKb();if(b.dataset.page==='llm')loadLlm();if(b.dataset.page==='skills')loadSkills();if(b.dataset.page==='mcp')loadMcp();if(b.dataset.page==='audit')loadAudit();});}
 /* ---------- 对话 ---------- */
@@ -153,7 +202,7 @@ async function loadLlm(){document.getElementById('crumb').textContent='大模型
 }
 /* ---------- 技能库 ---------- */
 async function loadSkills(){document.getElementById('crumb').textContent='技能库';
-  let h='<div class="card"><h3>创建技能</h3><div class="row"><input type="text" id="sk-name" placeholder="名称（如 knowledge_base）"><input type="text" id="sk-desc" placeholder="描述"></div><div class="row"><input type="text" id="sk-trigger" placeholder="触发条件"><select id="sk-status" style="background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px"><option value="published">发布</option><option value="draft">草稿</option></select></div><div class="bar" style="margin-top:10px"><button id="sk-add">创建</button></div></div>';
+  let h='<div class="card"><h3>创建技能</h3><div class="row"><input type="text" id="sk-name" placeholder="名称（如 knowledge_base）"><input type="text" id="sk-desc" placeholder="描述"></div><div class="row"><input type="text" id="sk-trigger" placeholder="触发条件"><select id="sk-status" style="background:var(--ui-bg-card);color:var(--ui-text-primary);border:1px solid color-mix(in srgb,var(--ui-accent) 7%,transparent);border-radius:6px;padding:8px"><option value="published">发布</option><option value="draft">草稿</option></select></div><div class="bar" style="margin-top:10px"><button id="sk-add">创建</button></div></div>';
   h+='<h2>技能条目</h2><div id="sk-list"></div>';
   $('#skillspage').innerHTML=h;
   $('#sk-add').onclick=async()=>{try{const r=await jf('/api/skills',{name:$('#sk-name').value,description:$('#sk-desc').value,trigger:$('#sk-trigger').value,status:$('#sk-status').value});toast('已创建 '+r.name);loadSkills();}catch(e){alert(e.message)}};

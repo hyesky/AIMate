@@ -3,7 +3,10 @@
 一个**纯 stdlib 的 Web 管控台**——不用 Node、不用 npm、不用任何前端脚手架，
 靠标准库 `http.server` 起单页 UI（内联 HTML + 原生 JS），让数字员工 / RAG /
 内网 LLM 网关 / 技能库 / MCP 工具库在浏览器里可视可操作。信创环境无需安装
-前端工具链。界面风格参考 Hermes Desktop（左侧功能导航 rail + 深色面板卡片）。
+前端工具链。界面风格**忠实参考 Hermes Agent Desktop** 的真实设计语言（浅色）：
+chrome 背景 `#f8faff` + 侧栏 `#f3f7ff` + 白卡片，唯一强调色 Nous 蓝 `#0053fd`，
+`flat not boxed`（面板不套面板、用留白+单根头发丝线）、Menlo/SF Mono 等宽字体、
+克制圆角与内阴影输入框。token 与组件规范提取自 `~/.hermes/hermes-agent/apps/desktop/src/styles.css` + `DESIGN.md`。
 
 ## 启动
 ```bash
@@ -59,5 +62,5 @@ PYTHONPATH=$PWD python3 -m aimate.cli console --port 8900 \
 
 ## 验证
 - 自测 `console.*` / `kb.*` / `skills.*` / `mcp.*` 端到端（页面/概览/员工/检索/骨架对话/四模块管理）。
-- 真实浏览器实测：四面板 DOM 渲染、KB 录入与枚举、LLM 后端注册、MCP demo 连接与调用（`demo__sum`→`总和 = 21`）均正常。
-- 截图见 `docs/screenshots/`。
+- 真实浏览器实测：四面板 DOM 渲染与计算样式（浅色 Hermes token）、KB 录入与枚举、LLM 后端注册、MCP demo 连接与调用（`demo__sum`→`总和 = 21`）均正常。
+- 截图见 `docs/screenshots/`（`console.png`/`console_kb.png`/`console_mcp.png`/`console_chat_new.png`/`console_llm_new.png`）。
