@@ -66,6 +66,20 @@ class AgentRunner:
         self.turn_cap = turn_cap
         # 自定义执行器（测试/委派覆盖用）；默认走 _default_executor
         self._executor = executor
+        # 事件钩子：{"on_tool_before","on_tool_after","on_turn","on_done"} -> [回调]
+        self._hooks: dict[str, list[Callable[..., Any]]] = {}
+
+    def hook(self, event: str, fn: Callable[..., Any]) -> None:
+        """注册事件钩子。回调签名见 _fire/docstring。"""
+        self._hooks.setdefault(event, []).append(fn)
+
+    def _fire(self, event: str, **kw: Any) -> None:
+        """触发事件。异常被吞掉，不让钩子故障中断主循环。"""
+        for fn in self._hooks.get(event, []):
+            try:
+                fn(**kw)
+            except Exception:  # noqa: BLE001
+                logger.warning("hook %s 异常", event, exc_info=True)
 
     # ---- 工具 schema ----
     def tool_schemas(self) -> list[dict]:
@@ -126,25 +140,32 @@ class AgentRunner:
             # 无工具调用：正常回复
             if text:
                 history.append({"role": "assistant", "content": text})
+            self._fire("on_done", text=text, trace=trace)
             return text, trace
 
         # 超轮数兜底
+        self._fire("on_done", text="(已达到最大工具轮数上限)", trace=trace,
+                   truncated=True)
         return "(已达到最大工具轮数上限)", trace
 
     # ---- 执行器 ----
     def _execute_tool(self, name: str, args: dict, trace: list[dict]) -> str:
+        self._fire("on_tool_before", name=name, args=args)
         try:
             out = self._dispatch_tool(name, args)
             text = _stringify(out)
             trace.append({"tool": name, "args": args, "ok": True, "result": text})
+            self._fire("on_tool_after", name=name, args=args, ok=True, result=text)
             return text
         except ToolExecutionError as e:
             text = f"工具执行失败: {e}"
             trace.append({"tool": name, "args": args, "ok": False, "result": text})
+            self._fire("on_tool_after", name=name, args=args, ok=False, result=text)
             return text
         except Exception as e:  # noqa: BLE001 未知异常也不中断循环
             text = f"工具执行异常: {type(e).__name__}: {e}"
             trace.append({"tool": name, "args": args, "ok": False, "result": text})
+            self._fire("on_tool_after", name=name, args=args, ok=False, result=text)
             return text
 
     def _dispatch_tool(self, name: str, args: dict) -> Any:
