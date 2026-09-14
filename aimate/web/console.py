@@ -418,9 +418,16 @@ async function kbSearch(){const q=$('#kb-search').value.trim();if(!q){loadKbTree
   +escPath(f.path)+'\')"><span class="fi">📄</span><span>'+esc(f.path)+'</span><span class="fz">'+esc(f.ext)+'</span></div>').join('')
   ||'<div class="small">无匹配文件</div>';}
 async function kbPreview(p){try{const r=await jf('/api/kb/file?path='+encodeURIComponent(p));
- openModal('预览：'+p,'<div style="white-space:pre-wrap;max-height:60vh;overflow:auto">'+esc(r.content||'')+'</div>'
-  +'<div style="margin-top:10px"><button class="tbtn" onclick="kbOpenApp(\''+escPath(p)+'\')">用默认应用打开</button></div>');}
+ let body='';
+ if(r.kind==='image' && r.binary?.data_uri){body='<img src="'+r.binary.data_uri+'" style="max-width:100%;border-radius:8px">';}
+ else if(r.kind==='video' && r.binary?.data_uri){body='<video src="'+r.binary.data_uri+'" controls style="max-width:100%"></video>';}
+ else if(r.kind==='audio' && r.binary?.data_uri){body='<audio src="'+r.binary.data_uri+'" controls></audio>';}
+ else if(r.kind==='text'||r.kind==='code'){body='<pre style="white-space:pre-wrap;max-height:60vh;overflow:auto;margin:0;font:12px/1.6 Menlo,monospace">'+esc(r.content||'')+'</pre>';}
+ else {body='<div class="small" style="color:var(--ui-fg-muted)">「'+esc(r.kind||'file')+'」类型文件暂无内联预览，可用默认应用打开。</div>'+(r.binary?('<div class="small">大小 '+fmtSize(r.binary.size)+'</div>'):'');}
+ const appBtn='<div style="margin-top:10px"><button class="tbtn" onclick="kbOpenApp(\''+escPath(p)+'\')">用默认应用打开</button></div>';
+ openModal('预览：'+p,body+appBtn);}
  catch(e){toast(e.message)}}
+function fmtSize(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 async function kbOpenApp(p){await jf('/api/kb/open','POST',{path:p});toast('已用默认应用打开')}
 async function kbNewFile(){const name=prompt('文件名(含扩展名):');if(!name)return
  const p=prompt('目录路径(留空=根):','');await jf('/api/kb/new','POST',{path:p||'',name,type:'f'});toast('已新建');loadKbTree()}
@@ -902,15 +909,69 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "非文件"})
         content = ""
         ext = os.path.splitext(target)[1].lower()
-        textexts = {".txt", ".md", ".json", ".py", ".js", ".c", ".h", ".cpp", ".cc", ".java", ".html",
-                    ".css", ".csv", ".xml", ".yml", ".yaml", ".sh", ".log", ".gitignore"}
+        kind = self._kb_kind(ext)
+        textexts = {".txt", ".md", ".json", ".py", ".js", ".ts", ".c", ".h", ".cpp",
+                    ".cc", ".java", ".html", ".htm", ".css", ".csv", ".xml", ".yml",
+                    ".yaml", ".sh", ".bash", ".log", ".gitignore", ".toml", ".ini",
+                    ".conf", ".sql", ".go", ".rs", ".rb", ".php", ".vue", ".jsx",
+                    ".tsx", ".svg"}
+        # 二进制友好格式：文本类直接读；图片/音视频给可内联预览的 data URI 元信息
         if ext in textexts:
             try:
                 with open(target, "r", encoding="utf-8", errors="replace") as f:
-                    content = f.read(20000)
+                    content = f.read(50000)
             except Exception:
                 content = ""
-        return self._send(200, {"content": content, "ext": ext.lstrip(".")})
+        info = self._kb_binary_info(target, ext, kind)
+        return self._send(200, {"content": content, "ext": ext.lstrip("."), "kind": kind,
+                                "binary": info})
+
+    @staticmethod
+    def _kb_kind(ext: str) -> str:
+        ext = ext.lstrip(".").lower()
+        img = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg", "tiff", "heic"}
+        vid = {"mp4", "avi", "mov", "mkv", "webm", "flv", "wmv", "m4v"}
+        aud = {"mp3", "wav", "flac", "aac", "ogg", "m4a", "wma"}
+        off = {"doc", "docx", "ppt", "pptx", "xls", "xlsx", "odt", "ods", "odp", "rtf"}
+        code = {"py", "js", "ts", "c", "h", "cpp", "cc", "java", "go", "rs", "rb",
+                "php", "sql", "sh", "bash", "vue", "jsx", "tsx", "html", "htm",
+                "css", "scss", "less", "json", "xml", "yml", "yaml", "toml", "ini",
+                "conf"}
+        md = {"md", "markdown", "txt", "log", "csv", "gitignore"}
+        if ext in img:
+            return "image"
+        if ext in vid:
+            return "video"
+        if ext in aud:
+            return "audio"
+        if ext in off:
+            return "office"
+        if ext in code:
+            return "code"
+        if ext in md:
+            return "text"
+        return "file"
+
+    @staticmethod
+    def _kb_binary_info(path: str, ext: str, kind: str) -> dict | None:
+        """返回二进制文件的预览/元信息（内联 data URI 或默认应用打开提示）。"""
+        if not os.path.isfile(path):
+            return None
+        size = os.path.getsize(path)
+        base: dict = {"size": size}
+        if kind in ("image", "video", "audio") and size <= 8 * 1024 * 1024:
+            try:
+                b = open(path, "rb").read()
+                import base64 as _b64
+                mime = {"image": {"jpg": "jpeg", "jpeg": "jpeg", "png": "png",
+                                  "gif": "gif", "bmp": "bmp", "webp": "webp",
+                                  "svg": "svg+xml", "ico": "x-icon"}.get(
+                              os.path.splitext(path)[1].lstrip(".").lower(), "png"),
+                        "video": "mp4", "audio": "mpeg"}.get(kind, "octet-stream")
+                base["data_uri"] = f"data:{'image/' if kind=='image' else (kind+'/')}{mime};base64,{_b64.b64encode(b).decode()}"
+            except Exception:
+                pass
+        return base
 
     def _api_kb_new(self):
         root = self._kb_root()
