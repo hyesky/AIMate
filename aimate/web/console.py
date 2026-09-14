@@ -27,6 +27,10 @@ from typing import Any
 from aimate.web.accounts import AccountStore
 from aimate.web.session_store import SessionStore
 
+
+def _now_ms() -> float:
+    return time.time() * 1000.0
+
 # macOS 无 `timeout`——终端命令用后台+异步轮询实现（见 _term）。
 
 # ============================================================ CSS
@@ -121,6 +125,11 @@ header{display:flex;align-items:center;height:44px;padding:0 14px;gap:10px;
 .cdot{width:7px;height:7px;border-radius:50%;background:var(--ui-text-tertiary);margin-left:auto;opacity:.5}
 .cdot.busy{background:var(--ui-accent);opacity:1;animation:cdotpulse 1.2s infinite}
 @keyframes cdotpulse{0%,100%{opacity:1}50%{opacity:.25}}
+.statusbar{display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:12.5px;
+  color:var(--ui-text-secondary);border-bottom:1px solid var(--ui-stroke-tertiary);background:var(--ui-bg-chrome)}
+.statusbar.hidden{display:none}
+.statspin{display:inline-block;color:var(--ui-accent)}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 .cbox .crow{display:flex;align-items:flex-end;gap:8px}
 .cbox textarea{flex:1;border:0;outline:0;resize:none;background:transparent;color:var(--ui-text-primary);
   font-family:var(--sans);font-size:13.5px;line-height:1.5;max-height:120px;min-height:36px}
@@ -341,14 +350,31 @@ async function send(){const t=$('#input').value.trim();if(!t||!CURRENT_SID)retur
  msgs.push({role:'user',content:t});
  await jf('/api/sessions/'+CURRENT_SID+'/messages','POST',{role:'user',content:t});
  appendMsg('user',t);$('#msgs').scrollTop=99999;
+ let statusTimer=startStatusPoll(CURRENT_SID);
  try{const body={session_id:CURRENT_SID,messages:msgs};
   if(BE_MODEL)body.backend=BE_MODEL;
   const r=await jf('/api/chat','POST',body);
+  stopStatusPoll(statusTimer);hideStatusBar();
   const reply=r?.reply||r?.content||(typeof r==='string'?r:'');
   await jf('/api/sessions/'+CURRENT_SID+'/messages','POST',{role:'assistant',content:reply});
   appendMsg('ai',reply);$('#msgs').scrollTop=99999;}
- catch(e){appendMsg('ai','⚠ '+e.message)}
+ catch(e){stopStatusPoll(statusTimer);hideStatusBar();appendMsg('ai','⚠ '+e.message)}
  finally{$('#send').disabled=false;cdotBusy(false);loadHist();}}
+/* ---- A 方案: 任务状态条（轮询 GET /api/chat/status） ---- */
+function startStatusPoll(sid){if(!sid)return null;
+ const s=document.getElementById('statusbar');if(!s)return null;
+ const mk=()=>{s.classList.remove('hidden');s.innerHTML='<span class="statspin">◐</span><span class="stattxt">正在思考…</span>'};
+ const tick=async()=>{let r;try{r=await jf('/api/chat/status?sid='+encodeURIComponent(sid))}
+  catch(e){return}
+  if(!r||!r.running){hideStatusBar();return}
+  let txt='正在思考…';if(r.phase)txt=r.phase;
+  if(r.step&&r.total)txt+=' ('+r.step+'/'+r.total+')';
+  if(r.started_at){const el=Math.max(1,Math.round((Date.now()-r.started_at)/1000));txt+=' · '+el+'s'}
+  mk();const st=s.querySelector('.stattxt');if(st)st.textContent=txt;
+  const el=s.querySelector('.statspin');if(el)el.style.animation='spin 1.2s linear infinite'};
+ mk();const id=setInterval(tick,2000);tick();return id}
+function stopStatusPoll(id){if(id)clearInterval(id)}
+function hideStatusBar(){const s=document.getElementById('statusbar');if(s)s.classList.add('hidden');s&&(s.innerHTML='')}
 let BE_MODEL='';
 function cdotBusy(on){const c=$('#cdot');if(!c)return;c.classList.toggle('busy',!!on)}
 async function openCmod(ev){ev&&ev.stopPropagation();
@@ -397,6 +423,7 @@ async function openBrowser(url){$('#browser').innerHTML='<iframe class="ifrm" sr
 /* ===== 各管理视图 ===== */
 function mountViews(){
  $('#chatview').innerHTML='<div class="msgs scroll" id="msgs"></div>'
+ +'<div class="statusbar hidden" id="statusbar"></div>'
  +'<div class="composer"><div class="cbox">'
  +'<div class="cstrip"><button class="tbtn" onclick="pickFile()" title="上传文件">📎</button>'
  +'<button class="tbtn" onclick="openSkillPicker()" title="使用技能">🧩</button>'
@@ -768,6 +795,9 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     sessions: SessionStore = None
     scheduler: Any = None
     _sched_warn: str = ""
+    # 任务进度共享 dict：session_id -> 进度快照（A 方案状态条，前端 GET 轮询）
+    # 结构: {phase, tool, step, total, msgs, started_at, updated_at, done, error}
+    chat_progress: dict = {}
 
     # ---- helpers ----
     def _send(self, code: int, data, ctype: str = "application/json; charset=utf-8"):
@@ -1410,6 +1440,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 return self._mcp_list()
             if path == "/api/llm":
                 return self._llm_list()
+            if path == "/api/chat/status":
+                return self._chat_status()
             if path == "/api/audit":
                 return self._audit()
             if path == "/api/kb/tree":
@@ -1487,11 +1519,24 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         pass
 # ============================================================ 核心业务方法（补回）
-    def _chat(self) -> None:
-        """把消息发给默认 LLM 后端并返回回复。
+    def _chat_status(self) -> None:
+        """GET /api/chat/status?sid=xxx —— 返回该会话当前任务进度（A 方案状态条）。"""
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        sid = (q.get("sid") or [""])[0]
+        if not sid:
+            return self._send(400, {"error": "缺少 sid"})
+        snap = self.chat_progress.get(sid)
+        if not snap:
+            return self._send(200, {"running": False})
+        # 已结束的任务快照保留短暂时间后由前端清理；这里直接返回当前值
+        return self._send(200, snap)
 
-        向后兼容：带 agent_id + 无 LLM 时回退旧 skeleton（echo/agent）；
-        否则走新逻辑（messages→reply）。
+    def _chat(self) -> None:
+        """把消息发给数字员工（AgentRunner 多轮工具循环）并返回回复。
+
+        与旧逻辑一致：带 agent_id + 无真实 LLM 时回退 demo skeleton；
+        否则用 AgentRunner 跑多轮工具循环，期间经 hooks 把进度写入
+        self.chat_progress[sid]，前端 GET /api/chat/status 轮询拉取状态条。
         """
         b = self._body()
         msgs = b.get("messages") or []
@@ -1515,6 +1560,13 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             return self._send(200, {"echo": echo, "agent": "IT 支持专家",
                                     "agent_id": agent_id})
         last = (msgs[-1].get("content", "") if msgs else "")
+        progress = None
+        if sid:
+            # 注册进度槽（阻塞期间被 hooks 更新，前端轮询读取）
+            progress = self.chat_progress.setdefault(sid, {
+                "running": True, "sid": sid, "phase": "等待", "tool": "",
+                "step": 0, "total": 0, "started_at": _now_ms(),
+                "updated_at": _now_ms(), "done": False, "error": ""})
         reply = None
         try:
             s = self.system
@@ -1523,13 +1575,36 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 alias = b.get("backend") or getattr(s, "llm_default", None) or backends[0]
                 if alias not in backends:
                     alias = backends[0]
-                resp = s.llm.chat(alias, msgs)
-                try:
-                    reply = resp["choices"][0]["message"]["content"]
-                except Exception:
-                    reply = ""
+                from aimate.agents.runner import AgentRunner, BUILTIN_TOOLS
+
+                runner = AgentRunner(s, alias, turn_cap=8)
+                if progress is not None:
+                    def _on_tool_before(**kw):
+                        progress["tool"] = kw.get("name", "")
+                        progress["phase"] = "调用工具 " + kw.get("name", "")
+                        progress["step"] = progress.get("step", 0) + 1
+                        progress["total"] = max(progress.get("total", 1),
+                                                progress["step"])
+                        progress["updated_at"] = _now_ms()
+                    def _on_done(**kw):
+                        progress["phase"] = "完成"
+                        progress["tool"] = ""
+                        progress["done"] = True
+                        progress["running"] = False
+                        progress["updated_at"] = _now_ms()
+                        if kw.get("truncated"):
+                            progress["phase"] = "已达轮数上限"
+                    runner.hook("on_tool_before", _on_tool_before)
+                    runner.hook("on_done", _on_done)
+                reply, _trace = runner.run(msgs)
         except Exception:
             reply = None
+        if progress is not None:
+            progress["running"] = False
+            progress["done"] = True
+            progress["updated_at"] = _now_ms()
+            if reply is not None and not progress.get("done"):
+                progress["phase"] = "完成"
         if reply is None or not str(reply).strip():
             reply = self._local_reply(last, owner)
         if sid:
@@ -1540,7 +1615,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 pass
         self.system.audit.record("console", owner, "chat.send",
                                  (msgs[-1].get("content", "") if msgs else "")[:60])
-        return self._send(200, {"reply": str(reply)})
+        return self._send(200, {"reply": str(reply), "progress": progress})
 
     def _skeleton_reply(self, text: str) -> str:
         return (f"（演示回复｜IT 支持专家）收到：{text[:60] or '(空)'}。\n"
