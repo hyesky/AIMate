@@ -75,7 +75,8 @@ header{display:flex;align-items:center;height:44px;padding:0 14px;gap:10px;
 .avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}
 
 /* ===== 三栏 ===== */
-.cols{display:flex;height:calc(100% - 44px)}
+#app{height:100%;display:flex;flex-direction:column}
+.cols{display:flex;height:calc(100% - 44px);flex:1;min-height:0}
 /* 左栏 */
 .leftbar{width:232px;min-width:232px;background:var(--ui-bg-sidebar);border-right:1px solid var(--ui-stroke-tertiary);
   display:flex;flex-direction:column}
