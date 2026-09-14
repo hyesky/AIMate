@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # 内置非 MCP 工具名（前缀，不含「<server>__」）
 BUILTIN_TOOLS = {
     "rag_search": "在本地知识库中检索与 query 相关的内容（BM25 稀疏检索）",
+    "search_sessions": "跨会话全文搜索历史聊天记录（FTS5），召回用户之前提过的需求/问题——当用户提到「之前提过/改过的问题」时用它确认历史需求",
     "delegate_task": "把任务拆分为独立子任务并委派给子 Agent 并行执行，返回各子任务摘要",
     "execute_code": "在隔离沙箱子进程中执行一段 Python 代码，返回其 stdout/stderr",
 }
@@ -184,6 +185,13 @@ class AgentRunner:
                 {"text": getattr(h, "text", str(h)), "score": getattr(h, "score", None)}
                 for h in (hits or [])
             ]
+        if name == "search_sessions":
+            q = str(args.get("query") or args.get("q") or "")
+            owner = str(args.get("owner") or "default")
+            if not q:
+                raise ToolExecutionError("search_sessions 缺少 query")
+            return sys.search_sessions(q, owner,
+                                       int(args.get("limit") or 20))
         if name == "delegate_task":
             return self._delegate(args)
         if name == "execute_code":
@@ -212,6 +220,17 @@ def _builtin_params(name: str) -> dict:
             "properties": {
                 "query": {"type": "string",
                           "description": "要在本地知识库中检索的关键词/问题"},
+            },
+            "required": ["query"],
+        }
+    if name == "search_sessions":
+        return {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string",
+                          "description": "要在历史会话中检索的关键词（如「ai_ma 修改需求」「7个问题」）"},
+                "owner": {"type": "string", "description": "会话所属用户（默认 default）"},
+                "limit": {"type": "number", "description": "最多返回的会话数（默认 20）"},
             },
             "required": ["query"],
         }

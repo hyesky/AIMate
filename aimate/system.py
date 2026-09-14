@@ -30,6 +30,15 @@ class System:
         self.llm_config_path: Optional[str] = None
         self.llm_default = "inner-gateway"
         self.demo_agent: Optional[Agent] = None
+        # 会话历史（由 console.serve 注入，供数字员工 search_sessions 召回历史需求）
+        self.sessions: Optional[Any] = None
+
+    def search_sessions(self, query: str, owner: str = "default", limit: int = 20
+                        ) -> list[dict]:
+        """跨会话全文搜索历史消息（FTS5），召回包含 query 的会话与片段。"""
+        if self.sessions is None:
+            return []
+        return self.sessions.search(query, owner, limit)
 
     def configure_llm(self, path_or_dict) -> None:
         """从 JSON 配置文件装配内网 LLM 网关。可传路径或直接传 dict。"""

@@ -1654,6 +1654,11 @@ def serve(host: str = "127.0.0.1", port: int = 8900, system: Any = None,
     ConsoleHandler.system = system
     ConsoleHandler.agent_ids = agent_ids or []
     ConsoleHandler.accounts = AccountStore()
-    ConsoleHandler.sessions = SessionStore()
+    # 会话存储 HTTP/员工两处共享：HTTP handler 用 ConsoleHandler.sessions，
+    # 数字员工经 AgentRunner 调 search_sessions 用 system.sessions
+    store = SessionStore()
+    ConsoleHandler.sessions = store
+    if system is not None:
+        system.sessions = store
     srv = ThreadingHTTPServer((host, port), ConsoleHandler)
     return srv
