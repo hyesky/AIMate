@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 BUILTIN_TOOLS = {
     "rag_search": "在本地知识库中检索与 query 相关的内容（BM25 稀疏检索）",
     "delegate_task": "把任务拆分为独立子任务并委派给子 Agent 并行执行，返回各子任务摘要",
+    "execute_code": "在隔离沙箱子进程中执行一段 Python 代码，返回其 stdout/stderr",
 }
 
 # 子 Agent 必须屏蔽的工具（防止递归委派 / 污染共享状态）——借鉴 hermes
@@ -164,6 +165,12 @@ class AgentRunner:
             ]
         if name == "delegate_task":
             return self._delegate(args)
+        if name == "execute_code":
+            from aimate.agents.code_exec import execute_code
+
+            code = args.get("code") or ""
+            timeout = min(float(args.get("timeout", 300) or 300), 600)
+            return execute_code(code, timeout=timeout)
         if "__" in name:
             return sys.mcp.call_tool(name, args)
         raise ToolExecutionError(f"未知工具: {name}")
@@ -208,4 +215,8 @@ def _builtin_params(name: str) -> dict:
             },
             "required": ["tasks"],
         }
+    if name == "execute_code":
+        from aimate.agents.code_exec import schema as _code_schema
+
+        return _code_schema()
     return {"type": "object", "properties": {}}
