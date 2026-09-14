@@ -150,6 +150,20 @@ header{display:flex;align-items:center;height:44px;padding:0 14px;gap:10px;
 .kb-file.on{background:var(--ui-row-active);color:var(--ui-accent);font-weight:500}
 .kbdir{font-weight:500;color:var(--ui-text-primary);font-size:12.5px;padding:4px 8px;display:flex;align-items:center;gap:6px;cursor:pointer;border-radius:5px}
 .kbdir:hover{background:var(--ui-row-hover)}
+/* 模型库厂商模板卡片（参考 OpenOcta PROVIDER_GROUPS 网格） */
+.tplgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.tplcard{display:flex;align-items:center;gap:10px;padding:11px 12px;background:var(--ui-bg-chrome);
+  border:1px solid var(--ui-stroke-tertiary);border-radius:10px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.tplcard:hover{border-color:var(--ui-accent);box-shadow:0 2px 10px rgba(0,83,253,.08)}
+.tpllogo{width:38px;height:38px;border-radius:9px;color:#fff;display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:16px;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.tplbody{flex:1;min-width:0}
+.tplname{font-size:13.5px;font-weight:600;margin-bottom:4px}
+.tplm{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:3px}
+.tpltag{font-size:10.5px;color:var(--ui-text-tertiary);background:var(--ui-row-hover);border-radius:5px;padding:1px 6px;font-family:var(--mono)}
+.tplsmall{font-size:11px;color:var(--ui-text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tplgo{color:var(--ui-accent);font-size:16px;font-weight:600;flex-shrink:0;opacity:0;transition:opacity .12s}
+.tplcard:hover .tplgo{opacity:1}
 
 /* 右栏 */
 .rightbar{width:320px;min-width:320px;background:var(--ui-bg-sidebar);border-left:1px solid var(--ui-stroke-tertiary);
@@ -427,8 +441,21 @@ function mountViews(){
   +'<div class="kbprev-head"><span id="kb-prev-title" class="small">预览</span><button class="tbtn" id="kb-prev-open" style="display:none" onclick="kbOpenApp(kbPrevPath)">用默认应用打开</button></div>'
   +'<div class="kbprev-body" id="kb-prev"><div class="kbprev-empty">← 在左侧目录树选择一个文件预览</div></div>'
   +'</div></div>';
- $('#dbview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>模型库</h3>'
- +'<div id="models-list"></div></div></div>';
+ $('#dbview').innerHTML='<div class="msgs scroll">'
+ +'<div class="panel"><h3>🎛 模型库 / 厂商模板</h3>'
+ +'<p class="small" style="margin-bottom:10px">选择一个厂商模板自动填入 base_url 与默认模型，补充 API Key 即可注册。可自由扩展自定义接入。</p>'
+ +'<div id="model-tpl" class="tplgrid"></div>'
+ +'<hr style="border:none;border-top:1px solid var(--ui-stroke-tertiary);margin:14px 0">'
+ +'<h4 style="margin:0 0 8px;font-size:13px">当前接入（<span id="m-count">0</span>）· 默认 <span id="m-default">—</span></h4>'
+ +'<div id="models-list" class="small"></div>'
+ +'<hr style="border:none;border-top:1px solid var(--ui-stroke-tertiary);margin:14px 0">'
+ +'<h4 style="margin:0 0 8px;font-size:13px">自定义接入</h4>'
+ +'<div style="display:flex;gap:6px"><input class="lf" id="m-name" placeholder="名称/别名" style="flex:1">'
+ +'<input class="lf" id="m-url" placeholder="base_url" style="flex:2"></div>'
+ +'<div style="margin-top:8px;display:flex;gap:6px"><input class="lf" id="m-key" placeholder="api_key（可选）" style="flex:2">'
+ +'<input class="lf" id="m-model" placeholder="model（默认 default）" style="flex:1"></div>'
+ +'<div style="margin-top:8px;display:flex;gap:6px"><button class="sendbtn" onclick="addModel()">注册模型</button>'
+ +'<button class="tbtn" onclick="loadModels()">刷新</button></div></div></div>';
  $('#auditview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>审计库</h3>'
  +'<div id="audit-list"></div></div></div>';
  $('#input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
@@ -448,15 +475,62 @@ async function addMcp(){const n=$('#mcp-name').value.trim(),c=$('#mcp-cmd').valu
  if(!n||!c)return toast('名称与命令必填');
  try{const r=await jf('/api/mcp','POST',{name:n,cmd:c.split(/\\s+/)});toast('已连接 '+r.name);loadMcp()}
  catch(e){toast('连接失败: '+e.message)}}
+/* 厂商模板（参考 Hermes Desktop / OpenOcta PROVIDER_GROUPS 卡片模式） */
+const MODEL_TPL=[
+ {name:'DeepSeek',logo:'D',color:'#4D6BFE',base:'https://api.deepseek.com/v1',model:'deepseek-chat',
+  models:['deepseek-chat','deepseek-reasoner'],desc:'DeepSeek V3.2 / R1 推理',doc:'platform.deepseek.com'},
+ {name:'智谱 GLM',logo:'Z',color:'#3256A4',base:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4-flash',
+  models:['glm-4-flash','glm-4-air','glm-4-plus','glm-4-long'],desc:'GLM-4 系列（Z.AI 同源）',doc:'bigmodel.cn'},
+ {name:'通义千问 Qwen',logo:'Q',color:'#615CED',base:'https://dashscope.aliyuncs.com/compatible-mode/v1',model:'qwen-plus',
+  models:['qwen-turbo','qwen-plus','qwen-max','qwen2.5-72b-instruct'],desc:'阿里 DashScope 通义千问',doc:'dashscope.aliyuncs.com'},
+ {name:'Kimi 月之暗面',logo:'K',color:'#1C1C1E',base:'https://api.moonshot.cn/v1',model:'kimi-k2-0711-preview',
+  models:['moonshot-v1-8k','kimi-k2-0711-preview'],desc:'Moonshot Kimi 系列',doc:'platform.moonshot.cn'},
+ {name:'MiniMax',logo:'M',color:'#2468F2',base:'https://api.minimax.chat/v1',model:'MiniMax-Text-01',
+  models:['MiniMax-Text-01','abab6.5s-chat'],desc:'MiniMax Text 系列',doc:'platform.minimaxi.com'},
+ {name:'豆包 火山方舟',logo:'B',color:'#3370FF',base:'https://ark.cn-beijing.volces.com/api/v3',model:'doubao-pro-32k',
+  models:['doubao-pro-32k','doubao-1-5-pro'],desc:'字节豆包大模型',doc:'火山方舟 ark'},
+ {name:'百度千帆',logo:'B',color:'#2932E1',base:'https://qianfan.baidubce.com/v2',model:'ernie-4.0-8k',
+  models:['ernie-4.0-8k','ernie-3.5-8k'],desc:'文心一言 ERNIE',doc:'qianfan.baidubce.com'},
+ {name:'讯飞星火',logo:'X',color:'#1AB7EA',base:'https://spark-api-open.xf-yun.com/v1',model:'generalv3.5',
+  models:['generalv3.5','generalv3','4.0Ultra'],desc:'讯飞星火大模型',doc:'xinghuo.xfyun.cn'},
+ {name:'商汤日日新',logo:'S',color:'#D83A3A',base:'https://api.sensenova.cn/compatible-mode/v1',model:'SenseChat-5',
+  models:['SenseChat-5','SenseChat-5.5'],desc:'商汤 SenseNova',doc:'sensenova.com'},
+ {name:'阶跃星辰',logo:'S',color:'#7C3AED',base:'https://api.stepfun.com/v1',model:'step-1-8k',
+  models:['step-1-8k','step-2-16k'],desc:'Step 系列（开放平台）',doc:'platform.stepfun.com'},
+ {name:'零一万物',logo:'Y',color:'#00A3A3',base:'https://api.lingyiwanwu.com/v1',model:'yi-large',
+  models:['yi-large','yi-medium'],desc:'01.AI Yi 系列',doc:'platform.lingyiwanwu.com'},
+ {name:'OpenAI',logo:'O',color:'#10A37F',base:'https://api.openai.com/v1',model:'gpt-4o-mini',
+  models:['gpt-4o','gpt-4o-mini','gpt-4.1'],desc:'OpenAI GPT 系列',doc:'platform.openai.com'},
+ {name:'Anthropic',logo:'A',color:'#D97757',base:'https://api.anthropic.com/v1',model:'claude-3-5-sonnet',
+  models:['claude-3-5-sonnet','claude-3-5-haiku'],desc:'Claude（经兼容网关）',doc:'console.anthropic.com'},
+ {name:'xAI Grok',logo:'G',color:'#111111',base:'https://api.x.ai/v1',model:'grok-2',
+  models:['grok-2','grok-beta'],desc:'xAI Grok 系列',doc:'console.x.ai'},
+ {name:'Gemini',logo:'G',color:'#4285F4',base:'https://generativelanguage.googleapis.com/v1beta/openai',model:'gemini-1.5-flash',
+  models:['gemini-1.5-flash','gemini-1.5-pro'],desc:'Google Gemini（OpenAI 兼容）',doc:'aistudio.google.com'},
+ {name:'Ollama 本地',logo:'🐳',color:'#5A5A5A',base:'http://127.0.0.1:11434/v1',model:'llama3.1',
+  models:['llama3.1','qwen2.5'],desc:'本地 Ollama（OpenAI 兼容）',doc:'localhost'},
+ {name:'vLLM 本地',logo:'V',color:'#6C5CE7',base:'http://127.0.0.1:8000/v1',model:'default',
+  models:['default'],desc:'本地 vLLM / LM Studio',doc:'localhost'},
+ {name:'DeepInfra',logo:'D',color:'#E535AB',base:'https://api.deepinfra.com/v1',model:'meta-llama/Meta-Llama-3.1-70B-Instruct',
+  models:['meta-llama/Meta-Llama-3.1-70B-Instruct'],desc:'DeepInfra 托管推理',doc:'deepinfra.com'}];
+function renderTpl(){const g=document.getElementById('model-tpl');if(!g)return;
+ g.innerHTML=MODEL_TPL.map(t=>'<div class="tplcard" onclick="useTpl('+MODEL_TPL.indexOf(t)+')">'
+  +'<div class="tpllogo" style="background:'+t.color+'">'+esc(t.logo)+'</div>'
+  +'<div class="tplbody"><div class="tplname">'+esc(t.name)+'</div>'
+  +'<div class="tplm">'+t.models.map(m=>'<span class="tpltag">'+esc(m)+'</span>').join('')+'</div>'
+  +'<div class="tplsmall">'+esc(t.desc)+' · '+esc(t.doc)+'</div></div>'
+  +'<div class="tplgo">＋</div></div>').join('')}
+function useTpl(i){const t=MODEL_TPL[i];if(!t)return;
+ $('#m-name').value=t.name;$('#m-url').value=t.base;$('#m-model').value=t.model;$('#m-key').value='';
+ toast('已填入 '+t.name+' 模板，请填写 API Key 后注册');window.scrollTo(0,document.body.scrollHeight)}
 async function loadModels(){const r=await jf('/api/llm');
- $('#models-list').innerHTML=(r.backends||[]).map(b=>'<div class="kv"><span class="k">'+esc(b.alias)+'</span>'
- +'<span class="small">'+esc(b.base_url)+'</span><span class="pill ok">'+esc(b.model||'?')+'</span></div>').join('')
- +'<div class="small" style="margin-top:6px">默认：'+esc(r.default||'—')+'</div>'
- +'<div style="margin-top:10px;display:flex;gap:6px"><input class="lf" id="m-name" placeholder="name" style="flex:1">'
- +'<input class="lf" id="m-url" placeholder="base_url" style="flex:2"></div>'
- +'<div style="margin-top:8px;display:flex;gap:6px"><input class="lf" id="m-key" placeholder="api_key" style="flex:2">'
- +'<input class="lf" id="m-model" placeholder="model" style="flex:1"></div>'
- +'<div style="margin-top:8px"><button class="sendbtn" onclick="addModel()">注册模型</button></div>';}
+ renderTpl();
+ const lis=(r.backends||[]);
+ $('#m-count').textContent=lis.length;$('#m-default').textContent=r.default||'—';
+ $('#models-list').innerHTML=lis.map(b=>'<div class="kv"><span class="k" style="min-width:110px">'+esc(b.alias)+'</span>'
+ +'<span class="small" style="overflow:hidden;text-overflow:ellipsis">'+esc(b.base_url)+'</span><span class="pill ok">'+esc(b.model||'?')+'</span></div>').join('')
+ +'<div class="small" style="margin-top:6px;color:var(--ui-text-tertiary)">'+lis.length+' 个后端已接入；可通过厂商模板快速注册。</div>';}
+
 async function addModel(){const name=$('#m-name').value.trim(),url=$('#m-url').value.trim();
  if(!name||!url)return toast('name 与 base_url 必填');
  try{const r=await jf('/api/llm','POST',{name,base_url:url,api_key:$('#m-key').value,model:$('#m-model').value||'default'});
