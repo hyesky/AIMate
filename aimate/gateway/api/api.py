@@ -75,22 +75,25 @@ class GatewayAPI:
 
         try:
             alias = agent.model or self.system.llm_default
-            tools = self.tool_schemas() or None
-            resp = self.system.llm.chat(alias, messages, tools=tools)
+            # 多轮工具循环：让数字员工能执行工具（RAG 检索 / MCP / 委派）
+            from aimate.agents.runner import AgentRunner
+
+            runner = AgentRunner(self.system, alias)
+            tools = runner.tool_schemas() or None
+            text, trace = runner.run(messages, tools=tools)
             backend = self.system.llm.resolve(alias)
-            text = backend.reply_text(resp)
             self.system.audit.record(
                 principal.actor, req.tenant_id, "llm.dispatch",
                 target=agent.id,
-                detail=f"model={backend.config.model} msgs={len(messages)}",
+                detail=f"model={backend.config.model} msgs={len(messages)} tools={len(trace)}",
             )
             return {
                 "session_id": session_id,
                 "agent": agent.name,
                 "model": backend.config.model,
                 "reply": text,
-                "finish_reason": backend.finish_reason(resp),
-                "tool_calls": backend.tool_calls(resp),
+                "finish_reason": "stop",
+                "tool_trace": trace,
             }
         except LLMError as e:
             self.system.audit.record(
