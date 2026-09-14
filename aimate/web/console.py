@@ -94,6 +94,7 @@ header{display:flex;align-items:center;height:44px;padding:0 14px;gap:10px;
 
 /* 中栏 */
 .center{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--ui-bg-chrome)}
+.nview{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
 .ctoolbar{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--ui-stroke-tertiary);flex-wrap:wrap}
 .tbtn{background:transparent;border:1px solid var(--ui-stroke-tertiary);color:var(--ui-text-tertiary);
   cursor:pointer;padding:4px 10px;border-radius:6px;font-size:12.5px;display:flex;gap:5px;align-items:center}
@@ -112,13 +113,43 @@ header{display:flex;align-items:center;height:44px;padding:0 14px;gap:10px;
 .msg.user .bub{background:var(--ui-accent-mix);border-color:transparent}
 /* 输入区 */
 .composer{padding:10px 16px 14px;border-top:1px solid var(--ui-stroke-tertiary);background:var(--ui-bg-chrome)}
-.cbox{display:flex;align-items:flex-end;gap:8px;background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);
-  border-radius:10px;padding:8px 10px;box-shadow:0 1px 3px rgba(0,0,0,.03)}
+.cbox{display:flex;flex-direction:column;gap:8px;background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);
+  border-radius:12px;padding:8px 10px;box-shadow:0 1px 3px rgba(0,0,0,.03);transition:border-color .15s}
+.cbox:focus-within{border-color:var(--ui-accent)}
+.cstrip{display:flex;align-items:center;gap:4px}
+.cstrip .tbtn{padding:2px 7px;font-size:14px;border:0}
+.cdot{width:7px;height:7px;border-radius:50%;background:var(--ui-text-tertiary);margin-left:auto;opacity:.5}
+.cdot.busy{background:var(--ui-accent);opacity:1;animation:cdotpulse 1.2s infinite}
+@keyframes cdotpulse{0%,100%{opacity:1}50%{opacity:.25}}
+.cbox .crow{display:flex;align-items:flex-end;gap:8px}
 .cbox textarea{flex:1;border:0;outline:0;resize:none;background:transparent;color:var(--ui-text-primary);
-  font-family:var(--sans);font-size:13.5px;line-height:1.5;max-height:120px;min-height:32px}
+  font-family:var(--sans);font-size:13.5px;line-height:1.5;max-height:120px;min-height:36px}
+.cfield{display:flex;align-items:center;gap:6px}
+.cmod{font-size:11px;color:var(--ui-text-tertiary);cursor:pointer;padding:3px 9px;border:1px dashed var(--ui-stroke-tertiary);
+  border-radius:12px;transition:border-color .15s;user-select:none}
+.cmod:hover{border-style:solid;border-color:var(--ui-accent);color:var(--ui-accent)}
 .sendbtn{background:var(--ui-accent);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:500}
 .sendbtn:hover{filter:brightness(1.05)}
 .sendbtn:disabled{opacity:.5;cursor:default}
+/* 知识库双栏：左目录树 / 右预览 */
+.kbsplit{flex:1;display:flex;min-height:0;gap:12px}
+.kbpane{display:flex;flex-direction:column;min-height:0;background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);
+  border-radius:10px;overflow:hidden}
+.kb-tree-pane{width:340px;min-width:240px;flex-shrink:0}
+.kb-prev-pane{flex:1;min-width:0}
+.kb-tools{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--ui-stroke-tertiary);flex-wrap:wrap;align-items:center}
+.kb-tools .lf{margin-bottom:0}
+.kbsplit .scrolly{flex:1;overflow-y:auto;padding:8px}
+.kbprev-head{padding:10px 14px;border-bottom:1px solid var(--ui-stroke-tertiary);font-size:13px;font-weight:600;
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+.kbprev-body{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column}
+.kbprev-empty{color:var(--ui-text-tertiary);font-size:12.5px;text-align:center;padding:60px 20px;border:1.5px dashed var(--ui-stroke-tertiary);border-radius:10px}
+.kb-file{display:block;width:100%;text-align:left;background:transparent;border:0;border-radius:5px;padding:4px 8px;
+  color:var(--ui-text-primary);font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.kb-file:hover{background:var(--ui-row-hover)}
+.kb-file.on{background:var(--ui-row-active);color:var(--ui-accent);font-weight:500}
+.kbdir{font-weight:500;color:var(--ui-text-primary);font-size:12.5px;padding:4px 8px;display:flex;align-items:center;gap:6px;cursor:pointer;border-radius:5px}
+.kbdir:hover{background:var(--ui-row-hover)}
 
 /* 右栏 */
 .rightbar{width:320px;min-width:320px;background:var(--ui-bg-sidebar);border-left:1px solid var(--ui-stroke-tertiary);
@@ -170,6 +201,9 @@ header{display:flex;align-items:center;height:44px;padding:0 14px;gap:10px;
 .menu div:hover{background:var(--ui-row-hover)}
 .menu .sep{border-top:1px solid var(--ui-stroke-tertiary);margin:4px 0;padding:0}
 .menu .lbl{font-size:11px;color:var(--ui-text-tertiary);cursor:default}
+.cmoditem{display:flex;flex-direction:column;gap:1px}
+.cmoditem .cmodn{font-size:13px;font-weight:500}
+.cmoditem.on{background:var(--ui-row-active);color:var(--ui-accent)}
 .panel{background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);border-radius:10px;padding:14px;margin-bottom:12px}
 .panel h3{font-size:13.5px;font-weight:600;margin-bottom:10px}
 .panel .kv{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--ui-stroke-tertiary);font-size:12.5px}
@@ -288,17 +322,35 @@ async function loadMsgs(){if(!CURRENT_SID){$('#msgs').innerHTML='<div class="msg
   ||'<div class="small" style="padding:10px">新会话，发第一条消息吧。</div>';
  $('#msgs').scrollTop=99999;}
 async function send(){const t=$('#input').value.trim();if(!t||!CURRENT_SID)return;
- $('#input').value='';$('#send').disabled=true;
+ $('#input').value='';$('#send').disabled=true;cdotBusy(true);
  const msgs=(await jf('/api/sessions/'+CURRENT_SID+'/messages')).messages||[];
  msgs.push({role:'user',content:t});
  await jf('/api/sessions/'+CURRENT_SID+'/messages','POST',{role:'user',content:t});
  appendMsg('user',t);$('#msgs').scrollTop=99999;
- try{const r=await jf('/api/chat','POST',{session_id:CURRENT_SID,messages:msgs});
+ try{const body={session_id:CURRENT_SID,messages:msgs};
+  if(BE_MODEL)body.backend=BE_MODEL;
+  const r=await jf('/api/chat','POST',body);
   const reply=r?.reply||r?.content||(typeof r==='string'?r:'');
   await jf('/api/sessions/'+CURRENT_SID+'/messages','POST',{role:'assistant',content:reply});
   appendMsg('ai',reply);$('#msgs').scrollTop=99999;}
  catch(e){appendMsg('ai','⚠ '+e.message)}
- finally{$('#send').disabled=false;loadHist();}}
+ finally{$('#send').disabled=false;cdotBusy(false);loadHist();}}
+let BE_MODEL='';
+function cdotBusy(on){const c=$('#cdot');if(!c)return;c.classList.toggle('busy',!!on)}
+async function openCmod(ev){ev&&ev.stopPropagation();
+ let r;try{r=await jf('/api/llm')}catch(e){return toast('无法加载模型列表')}
+ const bs=(r.backends||[]);
+ if(!bs.length)return toast('暂无已注册大模型，请到「模型库」注册');
+ const d=document.createElement('div');d.className='menu modmenu';d.id='cmodmenu';
+ d.style.position='fixed';d.style.bottom=(ev?window.innerHeight-ev.clientY+8:64)+'px';d.style.right='24px';d.style.minWidth='220px';
+ d.innerHTML='<div class="lbl" style="padding-bottom:6px">选择模型</div>'
+  +bs.map(b=>'<div class="cmoditem'+(b.alias===BE_MODEL?' on':'')+'" data-m="'+esc(b.alias)+'">'
+   +'<span class="cmodn">'+esc(b.alias)+'</span><span class="small">'+esc(b.model||'')+'</span></div>').join('');
+ d.addEventListener('click',e=>{const it=e.target.closest('.cmoditem');if(!it)return;
+  BE_MODEL=it.dataset.m;$('#cmod').textContent=BE_MODEL;$('#cmod').style.borderStyle='solid';d.remove();});
+ document.body.appendChild(d);
+ setTimeout(()=>document.addEventListener('click',()=>document.getElementById('cmodmenu')?.remove(),{once:true}))}
+
 function appendMsg(role,text){const ai=role!=='user';
  $('#msgs').insertAdjacentHTML('beforeend','<div class="msg '+(ai?'ai':'user')+'"><div class="mav">'
  +(ai?'Ai':(ME.name||'我').slice(0,1))+'</div><div class="bub">'+esc(text)+'</div></div>');}
@@ -330,14 +382,17 @@ async function openBrowser(url){$('#browser').innerHTML='<iframe class="ifrm" sr
 
 /* ===== 各管理视图 ===== */
 function mountViews(){
- $('#chatview').innerHTML='<div class="msgs scroll" id="msgs"></div><div class="composer"><div class="cbox">'
- +'<textarea id="input" placeholder="输入指令…(Enter 发送)"></textarea>'
+ $('#chatview').innerHTML='<div class="msgs scroll" id="msgs"></div>'
+ +'<div class="composer"><div class="cbox">'
+ +'<div class="cstrip"><button class="tbtn" onclick="pickFile()" title="上传文件">📎</button>'
+ +'<button class="tbtn" onclick="openSkillPicker()" title="使用技能">🧩</button>'
+ +'<button class="tbtn" onclick="loadMcp();nav(\'mcp\')" title="MCP 工具">🔌</button>'
+ +'<button class="tbtn" onclick="openBrowser(\'about:blank\')" title="打开浏览器">🌐</button>'
+ +'<span class="cdot" id="cdot" title="输入状态"></span></div>'
+ +'<div class="crow"><textarea id="input" placeholder="输入指令，Enter 发送（Shift+Enter 换行）"></textarea>'
  +'<button class="sendbtn" id="send" onclick="send()">发送</button></div>'
- +'<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'
- +'<button class="tbtn" onclick="pickFile()">⬆ 上传文件</button>'
- +'<button class="tbtn" onclick="openSkillPicker()">🧩 使用技能</button>'
- +'<button class="tbtn" onclick="loadMcp();nav(\'mcp\')">🔌 MCP 工具</button>'
- +'<button class="tbtn" onclick="openBrowser(\'about:blank\')">🌐 打开浏览器</button></div></div>';
+ +'<div class="cfield"><span class="cmod" id="cmod" onclick="openCmod(event)">指定模型</span></div>'
+ +'</div>';
  $('#cronview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>定时任务 Cron</h3>'
  +'<p class="small" style="margin-bottom:10px">Cron 表达式（分 时 日 月 周），支持暂停/恢复/手动触发与执行历史。</p>'
  +'<div style="display:flex;gap:6px;margin-bottom:8px"><input class="lf" id="cron-name" placeholder="任务名" style="flex:1.2">'
@@ -359,17 +414,19 @@ function mountViews(){
  +'<div style="display:flex;gap:8px;margin-bottom:10px"><input class="lf" id="mcp-name" placeholder="名称" style="width:110px">'
  +'<input class="lf" id="mcp-cmd" placeholder="命令，如 python3 -m aimate.mcp.demo" style="flex:1">'
  +'<button class="sendbtn" onclick="addMcp()">连接</button></div><div id="mcp-list"></div></div></div>';
- $('#kbview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>本地知识库</h3>'
- +'<p class="small" style="margin-bottom:10px">目录：<span id="kb-root" class="hd"></span></p>'
- +'<div style="display:flex;gap:8px;margin-bottom:10px"><input class="lf" id="kb-search" placeholder="按名称搜索文件…" style="flex:1">'
- +'<button class="sendbtn" onclick="kbSearch()">搜索</button></div>'
- +'<div style="display:flex;gap:6px;margin-bottom:10px"><button class="tbtn" onclick="kbUploadFile()">🔼 上传转RAG</button>'
- +'<button class="tbtn" onclick="kbNewFile()">+ 文件</button>'
- +'<button class="tbtn" onclick="kbNewDir()">+ 文件夹</button></div>'
- +'<div id="kb-tree" class="small"></div>'
- +'<hr style="border:none;border-top:1px solid var(--ui-border);margin:12px 0">'
- +'<h4 style="margin:0 0 6px;font-size:13px">📚 已索引 RAG 文档</h4>'
- +'<div id="kb-docs" class="small"></div></div></div>';
+ $('#kbview').innerHTML='<div class="kbsplit">'
+ +'<div class="kbpane kb-tree-pane">'
+  +'<div class="kb-tools"><span class="hd" style="font-size:12.5px">📚 知识库</span><input class="lf" id="kb-search" placeholder="搜索文件…" style="min-width:90px;flex:1" onkeydown="if(event.key===\'Enter\')kbSearch()"></div>'
+  +'<div class="kb-tools" style="border-top:0"><button class="tbtn" onclick="kbUploadFile()">🔼 RAG</button><button class="tbtn" onclick="kbNewFile()">+ 文件</button><button class="tbtn" onclick="kbNewDir()">+ 文件夹</button></div>'
+  +'<div class="scrolly"><div class="small" style="padding:2px 6px 6px;color:var(--ui-text-tertiary)">目录：<span id="kb-root"></span></div>'
+  +'<div id="kb-tree" class="small"></div>'
+  +'<hr style="border:none;border-top:1px solid var(--ui-stroke-tertiary);margin:12px 0">'
+  +'<div class="small" style="padding:2px 6px 6px;color:var(--ui-text-tertiary)">已索引 RAG 文档</div>'
+  +'<div id="kb-docs" class="small"></div></div></div>'
+ +'<div class="kbpane kb-prev-pane">'
+  +'<div class="kbprev-head"><span id="kb-prev-title" class="small">预览</span><button class="tbtn" id="kb-prev-open" style="display:none" onclick="kbOpenApp(kbPrevPath)">用默认应用打开</button></div>'
+  +'<div class="kbprev-body" id="kb-prev"><div class="kbprev-empty">← 在左侧目录树选择一个文件预览</div></div>'
+  +'</div></div>';
  $('#dbview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>模型库</h3>'
  +'<div id="models-list"></div></div></div>';
  $('#auditview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>审计库</h3>'
@@ -414,30 +471,35 @@ async function loadKbTree(){const r=await jf('/api/kb/tree');
 function renderKbTree(nodes,path){$('#kb-tree').innerHTML=walk(nodes,path);}
 function walk(nodes,path){let out='';for(const n of nodes||[]){
  const p=path?path+'/'+n.name:n.name;
- if(n.type==='d')out+='<div class="wdfile" onclick="kbExpand(\''+escPath(p)+'\')" style="cursor:pointer">'
+ if(n.type==='d')out+='<div class="kbdir" onclick="kbExpand(\''+escPath(p)+'\')">'
   +'<span class="di">📁</span><span>'+esc(n.name)+'</span></div>'
-  +'<div style="padding-left:16px" id="kbx-'+escPath(p)+'">'+(n.children?walk(n.children,p):'')+'</div>';
- else out+='<div class="wdfile" onclick="kbPreview(\''+escPath(p)+'\')" style="cursor:pointer">'
+  +'<div style="padding-left:14px" id="kbx-'+escPath(p)+'">'+(n.children?walk(n.children,p):'')+'</div>';
+ else out+='<button class="kb-file" onclick="kbSelect(\''+escPath(p)+'\')">'
   +'<span class="fi">📄</span><span>'+esc(n.name)+'</span>'
-  +'<span class="fz">'+esc(n.ext||'')+'</span></div>';}return out}
+  +'<span class="fz">'+esc(n.ext||'')+'</span></button>';}return out}
 function escPath(p){return esc(p).replace(/'/g,"\\'")}
 async function kbExpand(p){const r=await jf('/api/kb/branch?path='+encodeURIComponent(p));
  const el=document.getElementById('kbx-'+esc(p));if(el)el.innerHTML=walk(r.files,p);}
 async function kbSearch(){const q=$('#kb-search').value.trim();if(!q){loadKbTree();return}
  const r=await jf('/api/kb/search?q='+encodeURIComponent(q));
- $('#kb-tree').innerHTML=(r.results||[]).map(f=>'<div class="wdfile" style="cursor:pointer" onclick="kbPreview(\''
-  +escPath(f.path)+'\')"><span class="fi">📄</span><span>'+esc(f.path)+'</span><span class="fz">'+esc(f.ext)+'</span></div>').join('')
-  ||'<div class="small">无匹配文件</div>';}
-async function kbPreview(p){try{const r=await jf('/api/kb/file?path='+encodeURIComponent(p));
- let body='';
- if(r.kind==='image' && r.binary?.data_uri){body='<img src="'+r.binary.data_uri+'" style="max-width:100%;border-radius:8px">';}
- else if(r.kind==='video' && r.binary?.data_uri){body='<video src="'+r.binary.data_uri+'" controls style="max-width:100%"></video>';}
- else if(r.kind==='audio' && r.binary?.data_uri){body='<audio src="'+r.binary.data_uri+'" controls></audio>';}
- else if(r.kind==='text'||r.kind==='code'){body='<pre style="white-space:pre-wrap;max-height:60vh;overflow:auto;margin:0;font:12px/1.6 Menlo,monospace">'+esc(r.content||'')+'</pre>';}
- else {body='<div class="small" style="color:var(--ui-fg-muted)">「'+esc(r.kind||'file')+'」类型文件暂无内联预览，可用默认应用打开。</div>'+(r.binary?('<div class="small">大小 '+fmtSize(r.binary.size)+'</div>'):'');}
- const appBtn='<div style="margin-top:10px"><button class="tbtn" onclick="kbOpenApp(\''+escPath(p)+'\')">用默认应用打开</button></div>';
- openModal('预览：'+p,body+appBtn);}
- catch(e){toast(e.message)}}
+ $('#kb-tree').innerHTML=(r.results||[]).map(f=>'<button class="kb-file" onclick="kbSelect(\''
+  +escPath(f.path)+'\')"><span class="fi">📄</span><span>'+esc(f.path)+'</span><span class="fz">'+esc(f.ext)+'</span></button>').join('')
+  ||'<div class="small" style="padding:6px">无匹配文件</div>';}
+let kbPrevPath='';
+async function kbSelect(p){kbPrevPath=p;
+ document.querySelectorAll('.kb-file').forEach(x=>x.classList.remove('on'));
+ (event&&event.currentTarget)?.classList.add('on');
+ try{const r=await jf('/api/kb/file?path='+encodeURIComponent(p));
+  $('#kb-prev-title').textContent=p;
+  const openBtn=$('#kb-prev-open');openBtn.style.display='inline-flex';
+  let body='';
+  if(r.kind==='image' && r.binary?.data_uri){body='<div style="background:#fbfcfe;border:1px solid var(--ui-stroke-tertiary);border-radius:8px;padding:8px;text-align:center"><img src="'+r.binary.data_uri+'" style="max-width:100%;max-height:65vh;border-radius:6px"></div>';}
+  else if(r.kind==='video' && r.binary?.data_uri){body='<video src="'+r.binary.data_uri+'" controls style="max-width:100%;border-radius:8px"></video>';}
+  else if(r.kind==='audio' && r.binary?.data_uri){body='<audio src="'+r.binary.data_uri+'" controls style="width:100%"></audio>';}
+  else if(r.kind==='text'||r.kind==='code'){body='<pre style="white-space:pre-wrap;margin:0;font:12px/1.7 Menlo,monospace;color:var(--ui-text-primary)">'+esc(r.content||'')+'</pre>';}
+  else {body='<div class="small" style="color:var(--ui-text-tertiary)">「'+esc(r.kind||'file')+'」类型文件暂无内联预览，可用「用默认应用打开」。</div>'+(r.binary?('<div class="small" style="margin-top:6px">大小 '+fmtSize(r.binary.size)+'</div>'):'');}
+  $('#kb-prev').innerHTML=body;loadKbDocs();}
+ catch(e){$('#kb-prev').innerHTML='<div class="small">'+esc(e.message)+'</div>'}}
 function fmtSize(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 async function kbOpenApp(p){await jf('/api/kb/open','POST',{path:p});toast('已用默认应用打开')}
 async function kbNewFile(){const name=prompt('文件名(含扩展名):');if(!name)return
@@ -1384,7 +1446,9 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             s = self.system
             backends = list((s.llm._backends or {}).keys())
             if backends:
-                alias = getattr(s, "llm_default", None) or backends[0]
+                alias = b.get("backend") or getattr(s, "llm_default", None) or backends[0]
+                if alias not in backends:
+                    alias = backends[0]
                 resp = s.llm.chat(alias, msgs)
                 try:
                     reply = resp["choices"][0]["message"]["content"]
