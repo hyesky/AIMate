@@ -356,9 +356,13 @@ function mountViews(){
  +'<p class="small" style="margin-bottom:10px">目录：<span id="kb-root" class="hd"></span></p>'
  +'<div style="display:flex;gap:8px;margin-bottom:10px"><input class="lf" id="kb-search" placeholder="按名称搜索文件…" style="flex:1">'
  +'<button class="sendbtn" onclick="kbSearch()">搜索</button></div>'
- +'<div style="display:flex;gap:6px;margin-bottom:10px"><button class="tbtn" onclick="kbNewFile()">+ 文件</button>'
+ +'<div style="display:flex;gap:6px;margin-bottom:10px"><button class="tbtn" onclick="kbUploadFile()">🔼 上传转RAG</button>'
+ +'<button class="tbtn" onclick="kbNewFile()">+ 文件</button>'
  +'<button class="tbtn" onclick="kbNewDir()">+ 文件夹</button></div>'
- +'<div id="kb-tree" class="small"></div></div></div>';
+ +'<div id="kb-tree" class="small"></div>'
+ +'<hr style="border:none;border-top:1px solid var(--ui-border);margin:12px 0">'
+ +'<h4 style="margin:0 0 6px;font-size:13px">📚 已索引 RAG 文档</h4>'
+ +'<div id="kb-docs" class="small"></div></div></div>';
  $('#dbview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>模型库</h3>'
  +'<div id="models-list"></div></div></div>';
  $('#auditview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>审计库</h3>'
@@ -399,7 +403,7 @@ async function loadAudit(){const r=await jf('/api/audit');
 
 async function loadKbTree(){const r=await jf('/api/kb/tree');
  $('#kb-root').textContent=r.root||'';renderKbTree(r.tree||r.files||[],'');
- const q=$('#kb-search').value;if(q)kbSearch();}
+ const q=$('#kb-search').value;if(q)kbSearch();loadKbDocs()}
 function renderKbTree(nodes,path){$('#kb-tree').innerHTML=walk(nodes,path);}
 function walk(nodes,path){let out='';for(const n of nodes||[]){
  const p=path?path+'/'+n.name:n.name;
@@ -440,6 +444,10 @@ async function doSessSearch(){const q=$('#sq').value.trim();if(!q)return
  $('#search-results').innerHTML=(r.results||[]).map(s=>'<div class="hist" style="padding:8px" onclick="openSession(\''+s.session_id+'\')">'
  +'<div class="ht">'+esc(s.title)+' <span class="hs">'+s.count+' 条</span></div>'
  +'<div class="hs">'+esc((s.snippets||[])[0]||'')+'</div></div>').join('')||'<div class="small">无命中</div>';}
+async function loadKbDocs(){try{const r=await jf('/api/kb/docs');$('#kb-docs').innerHTML=(r.docs||[]).map(d=>'<div class="kv" title="'+esc((d.sample||'').slice(0,200))+'"><span class="k">'+esc(d.doc_id)+'</span><span class="pill ok">'+d.chunks+'块</span><span class="small">'+esc(d.kind)+'</span></div>').join('')||'<div class="small">暂无索引文档</div>'}catch(e){$('#kb-docs').innerHTML='<div class="small">'+esc(e.message)+'</div>'}}
+async function kbUploadFile(){const inp=document.createElement('input');inp.type='file';inp.onchange=async()=>{const f=inp.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);
+ try{const resp=await fetch('/api/kb/upload',{method:'POST',body:fd,headers:TOKEN?{'X-Auth-Token':TOKEN}:{}});const j=await resp.json();if(!resp.ok){toast(j.error||'上传失败');return}
+  toast('已转RAG：'+j.doc_id+' ('+j.chunks+'块)');loadKbTree();loadKbDocs()}catch(e){toast('上传失败: '+e.message)}};inp.click()}
 function pickFile(){const inp=document.createElement('input');inp.type='file';inp.onchange=async()=>{
   const f=inp.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);
   const resp=await fetch('/api/sessions/'+CURRENT_SID+'/upload',{method:'POST',body:fd,headers:TOKEN?{'X-Auth-Token':TOKEN}:{}});
@@ -1008,6 +1016,61 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             return self._send(500, {"error": str(e)})
 
+    # ---- KB 上传 → RAG 摄取 ----
+    def _parse_upload_raw(self) -> tuple[str, bytes]:
+        """从 multipart/纯二进制请求体解析 (filename, body)。"""
+        n = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(n) if n else b""
+        filename = "upload.bin"
+        ct = self.headers.get("Content-Type", "")
+        if "multipart" in ct.lower():
+            import re
+            data = body.decode("latin1")
+            m = re.search(r'filename="([^"]+)"', data, re.I)
+            if m:
+                filename = m.group(1)
+            marker = ct.split("boundary=")[-1].strip().strip('"')
+            try:
+                raw = body.split(b"--" + marker.encode())[1]
+                chunks = raw.split(b"\r\n\r\n", 1)
+                part = chunks[1].split(b"\r\n--" + marker.encode())[0] if len(chunks) > 1 else raw
+                body = part
+            except Exception:
+                pass
+        return os.path.basename(filename), body
+
+    def _api_kb_upload(self):
+        """上传文件 → 自动整理 md 知识文件 → 索引入 RAG。"""
+        u = self._require()
+        if not u:
+            return
+        if "rag" not in (u.license_features or []) and (u.license_features is not None):
+            return self._send(403, {"error": "License 未开通 rag"})
+        try:
+            filename, body = self._parse_upload_raw()
+        except Exception as e:  # noqa: BLE001
+            return self._send(400, {"error": f"解析上传失败: {e}"})
+        if not body:
+            return self._send(400, {"error": "空文件"})
+        from aimate.web import kb_ingest
+        root = self._kb_root()
+        try:
+            r = kb_ingest.ingest_bytes(body, filename, root)
+        except Exception as e:  # noqa: BLE001
+            return self._send(500, {"error": f"摄取失败: {e}"})
+        doc_id = r["doc_id"]
+        # 读取生成的 md 并索引入 RAG
+        try:
+            with open(r["md_path"], "r", encoding="utf-8") as f:
+                md_text = f.read()
+            nchunks = self.system.add_kb_doc(doc_id, md_text, kind="sbx" if r["kind"] == "binary" else "doc")
+            r["chunks"] = nchunks
+        except Exception as e:  # noqa: BLE001
+            r["chunks"] = 0
+            r["index_warn"] = str(e)
+        self.system.audit.record("console", u.username, "kb.upload", doc_id)
+        return self._send(200, r)
+
     # ---- do_GET / do_POST ----
     def _info(self) -> None:
         agents = 0
@@ -1173,6 +1236,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 return self._skills_add()
             if path == "/api/kb/open":
                 return self._api_kb_open()
+            if path == "/api/kb/upload":
+                return self._api_kb_upload()
             if path == "/api/browser":
                 return self._browser()
             return self._send(404, {"error": "not found"})
