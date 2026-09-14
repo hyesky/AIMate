@@ -250,6 +250,7 @@ function nav(page){document.querySelectorAll('.navitem').forEach(x=>x.classList.
  document.getElementById('crumb').textContent=document.querySelector('.navitem[data-page="'+page+'"] .nl').textContent;
  if(page==='chat'&&CURRENT_SID)loadMsgs();
  if(page==='kb')loadKbTree();
+ if(page==='cron')loadCron();
  if(page==='skills')loadSkills();
  if(page==='mcp')loadMcp();
  if(page==='db')loadModels();
@@ -338,8 +339,14 @@ function mountViews(){
  +'<button class="tbtn" onclick="loadMcp();nav(\'mcp\')">🔌 MCP 工具</button>'
  +'<button class="tbtn" onclick="openBrowser(\'about:blank\')">🌐 打开浏览器</button></div></div>';
  $('#cronview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>定时任务 Cron</h3>'
- +'<p class="small" style="margin-bottom:10px">自然语言或 Cron 表达式，可附加技能，结果发任意平台，支持暂停/恢复/编辑。</p>'
- +'<div id="cron-list" class="small">（开发中 — P2 接入）</div></div></div>';
+ +'<p class="small" style="margin-bottom:10px">Cron 表达式（分 时 日 月 周），支持暂停/恢复/手动触发与执行历史。</p>'
+ +'<div style="display:flex;gap:6px;margin-bottom:8px"><input class="lf" id="cron-name" placeholder="任务名" style="flex:1.2">'
+ +'<input class="lf" id="cron-expr" placeholder="cron 表达式 (如 */5 * * * *)" style="flex:2">'
+ +'<input class="lf" id="cron-cmd" placeholder="命令 (exec 动作)" style="flex:2"></div>'
+ +'<div style="display:flex;gap:6px;margin-bottom:12px"><input class="lf" id="cron-prompt" placeholder="提示词 (call_llm 动作)" style="flex:3">'
+ +'<button class="sendbtn" onclick="cronAdd()">＋ 新建任务</button></div>'
+ +'<h4 style="margin:0 0 6px;font-size:13px">📅 任务列表</h4><div id="cron-list" class="small"></div>'
+ +'<h4 style="margin:14px 0 6px;font-size:13px">🕘 执行历史</h4><div id="cron-runs" class="small"></div></div></div>';
  $('#marketview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>员工市场</h3>'
  +'<p class="small">浏览/安装数字员工 Agent。（开发中 — P3 接入）</p></div></div>';
  $('#searchview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>会话搜索</h3>'
@@ -445,6 +452,32 @@ async function doSessSearch(){const q=$('#sq').value.trim();if(!q)return
  +'<div class="ht">'+esc(s.title)+' <span class="hs">'+s.count+' 条</span></div>'
  +'<div class="hs">'+esc((s.snippets||[])[0]||'')+'</div></div>').join('')||'<div class="small">无命中</div>';}
 async function loadKbDocs(){try{const r=await jf('/api/kb/docs');$('#kb-docs').innerHTML=(r.docs||[]).map(d=>'<div class="kv" title="'+esc((d.sample||'').slice(0,200))+'"><span class="k">'+esc(d.doc_id)+'</span><span class="pill ok">'+d.chunks+'块</span><span class="small">'+esc(d.kind)+'</span></div>').join('')||'<div class="small">暂无索引文档</div>'}catch(e){$('#kb-docs').innerHTML='<div class="small">'+esc(e.message)+'</div>'}}
+async function loadCron(){try{const r=await jf('/api/cron');
+ $('#cron-list').innerHTML=(r.jobs||[]).map(j=>{const st=j.state==='enabled'?'<span class="pill ok">启用</span>':'<span class="pill">暂停</span>';
+  const act=(j.action||{}).type||'log';
+  return '<div class="wdfile" style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px">'
+  +'<div style="flex:1"><b>'+esc(j.name)+'</b> '+st+'<div class="small">'+esc(j.expr)+' · <span class="hs">'+esc(act)+'</span> · 累计 '+j.total_runs+' 次</div></div>'
+  +'<div style="display:flex;gap:4px">'
+  +'<button class="tbtn" data-op="fire" data-id="'+j.id+'" onclick="cronOpBtn(this)">▶ 触发</button>'
+  +(j.state==='enabled'
+    ?'<button class="tbtn" data-op="pause" data-id="'+j.id+'" onclick="cronOpBtn(this)">⏸</button>'
+    :'<button class="tbtn" data-op="resume" data-id="'+j.id+'" onclick="cronOpBtn(this)">▶</button>')
+  +'<button class="tbtn" data-op="remove" data-id="'+j.id+'" onclick="cronOpBtn(this)">🗑</button></div></div>'}).join('')
+  ||'<div class="small">暂无任务，上方新建。</div>';
+ $('#cron-runs').innerHTML=(r.runs||[]).map(x=>'<div class="small" style="padding:2px 0;border-bottom:1px dashed var(--ui-border)">'
+  +'<span class="'+(x.ok?'pill ok':'pill')+'">'+(x.ok?'OK':'ERR')+'</span> <span class="k">'+esc(x.job_id)+'</span> '
+  +'<span class="hs">'+esc(String(x.ts||'').slice(0,19).replace('T',' '))+'</span>'
+  +'<div class="hs">'+esc(String(x.output||'').slice(0,140))+'</div></div>').join('')
+  ||'<div class="small">暂无执行记录</div>';
+ }catch(e){$('#cron-list').innerHTML='<div class="small">'+esc(e.message)+'</div>'}}
+async function cronAdd(){const name=$('#cron-name').value.trim()||'定时任务',expr=$('#cron-expr').value.trim();
+ if(!expr){toast('请输入 cron 表达式');return}
+ const cmd=$('#cron-cmd').value.trim(),prompt=$('#cron-prompt').value.trim();
+ const action=cmd?{type:'exec',cmd}:{type:'call_llm',prompt:prompt||('执行定时任务:'+name)};
+ const r=await jf('/api/cron','POST',{op:'add',name,expr,action});if(r.error){toast(r.error);return}
+ toast('已创建任务 '+r.job);loadCron()}
+async function cronOp(op,id){await jf('/api/cron','POST',{op,id});loadCron()}
+async function cronOpBtn(btn){const op=btn.dataset.op,id=btn.dataset.id;await jf('/api/cron','POST',{op,id});loadCron()}
 async function kbUploadFile(){const inp=document.createElement('input');inp.type='file';inp.onchange=async()=>{const f=inp.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);
  try{const resp=await fetch('/api/kb/upload',{method:'POST',body:fd,headers:TOKEN?{'X-Auth-Token':TOKEN}:{}});const j=await resp.json();if(!resp.ok){toast(j.error||'上传失败');return}
   toast('已转RAG：'+j.doc_id+' ('+j.chunks+'块)');loadKbTree();loadKbDocs()}catch(e){toast('上传失败: '+e.message)}};inp.click()}
@@ -597,6 +630,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     agent_ids: list[str] = []
     accounts: AccountStore = None
     sessions: SessionStore = None
+    scheduler: Any = None
+    _sched_warn: str = ""
 
     # ---- helpers ----
     def _send(self, code: int, data, ctype: str = "application/json; charset=utf-8"):
@@ -1071,6 +1106,62 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         self.system.audit.record("console", u.username, "kb.upload", doc_id)
         return self._send(200, r)
 
+    # ---- Cron 定时任务 ----
+    def _sched(self):
+        if not self.scheduler:
+            from aimate.web.scheduler import Scheduler
+            try:
+                self.scheduler = Scheduler(os.path.join(os.getcwd(), ".aimate"))
+                self.scheduler.start()
+            except Exception as e:  # noqa: BLE001
+                from aimate.web import console as _c
+                getattr(_c, "_last_sched_err", None)
+                self.scheduler = Scheduler("/tmp")
+                self.scheduler.start()
+                self._sched_warn = str(e)
+        return self.scheduler
+
+    def _cron_list(self):
+        self._require()
+        s = self._sched()
+        jobs = []
+        for j in s.list_jobs():
+            jobs.append({"id": j["id"], "name": j["name"], "expr": j["expr"],
+                         "state": j["state"], "action": j.get("action"),
+                         "last_run": j.get("last_run"), "next_run": j.get("next_run"),
+                         "total_runs": j.get("total_runs", 0)})
+        runs = s.list_runs(limit=30)
+        return self._send(200, {"jobs": jobs, "runs": runs})
+
+    def _cron_post(self):
+        u = self._require()
+        if not u:
+            return
+        b = self._body()
+        op = (b.get("op") or "add").strip()
+        s = self._sched()
+        try:
+            if op == "add":
+                if not b.get("expr"):
+                    return self._send(400, {"error": "缺少 expr(cron 表达式)"})
+                j = s.add_job(b.get("name", "任务") or "任务",
+                              b["expr"], b.get("action") or {"type": "log"})
+                self.system.audit.record("console", u.username, "cron.add", j["id"])
+                return self._send(200, {"job": j["id"]})
+            if op == "pause" or op == "resume":
+                jid = b.get("id", "")
+                s.set_state(jid, "paused" if op == "pause" else "enabled")
+                return self._send(200, {"ok": True})
+            if op == "remove":
+                s.remove_job(b.get("id", ""))
+                return self._send(200, {"ok": True})
+            if op == "fire":
+                s.fire(b.get("id", ""))
+                return self._send(200, {"ok": True})
+            return self._send(400, {"error": f"未知 op: {op}"})
+        except Exception as e:  # noqa: BLE001
+            return self._send(500, {"error": str(e)})
+
     # ---- do_GET / do_POST ----
     def _info(self) -> None:
         agents = 0
@@ -1195,6 +1286,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 return self._api_kb_file()
             if path == "/api/kb/docs":
                 return self._kb_docs()
+            if path == "/api/cron":
+                return self._cron_list()
             return self._send(404, {"error": "not found"})
         except Exception as e:  # noqa: BLE001
             self._send(500, {"error": f"{type(e).__name__}: {e}"})
@@ -1238,6 +1331,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 return self._api_kb_open()
             if path == "/api/kb/upload":
                 return self._api_kb_upload()
+            if path == "/api/cron":
+                return self._cron_post()
             if path == "/api/browser":
                 return self._browser()
             return self._send(404, {"error": "not found"})
