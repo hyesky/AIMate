@@ -121,7 +121,7 @@ header{display:flex;align-items:center;height:44px;padding:0 14px;gap:10px;
 .msg{display:flex;gap:10px;margin-bottom:16px}
 .msg .mav{width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
 .msg.user{flex-direction:row-reverse}
-.msg.user .mav{background:rgba(0,83,253,.12);color:var(--ui-accent)}
+.msg.user .mav{background:var(--ui-accent-mix);color:var(--ui-accent)}
 .msg.ai .mav{background:var(--ui-accent);color:#fff}
 .msg .bub{max-width:78%;padding:9px 13px;border-radius:var(--radius-lg);background:var(--ui-bg-card);
   border:1px solid var(--ui-stroke-tertiary);white-space:pre-wrap;word-break:break-word;line-height:1.6;box-shadow:var(--shadow-sm)}
