@@ -15,20 +15,12 @@ import base64
 import hashlib
 import struct
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+
+from .. import InboundMessage
 
 
 class WeComError(Exception):
     pass
-
-
-@dataclass
-class InboundMessage:
-    channel: str          # "wecom"
-    tenant_id: str
-    from_user: str
-    text: str
-    raw: dict = field(default_factory=dict)
 
 
 class WecomChannel:

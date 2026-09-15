@@ -118,11 +118,6 @@ viewer = sys_.org._members["u-admin"]
 check("rbac.member_tool", sys_.org.can(member, "use_tools"))
 check("rbac.admin_all", sys_.org.can(viewer, "audit.read"))
 
-# 9. 飞书签名
-feishu = __import__("aimate.gateway.channels.feishu.channel", fromlist=["FeishuChannel"]).FeishuChannel("id","secret")
-sig = __import__("hashlib").sha256(("t" + "n" + "secret").encode()).hexdigest()
-check("feishu.sign", feishu.verify_signature("t","n","b", sig))
-
 # 10. 记忆门控（借鉴 is_trivial_prompt 思想）
 from aimate.memory.gate import is_trivial_prompt
 check("gate.trivial", is_trivial_prompt("ok") and is_trivial_prompt("好的。")
@@ -149,6 +144,41 @@ try:
     check("wecom.badkey", False)
 except Exception:
     check("wecom.badkey", True)
+
+# 13. 飞书 IM 通道完整接线（验签 + AES 解密 + JSON 解析）
+from aimate.gateway.channels.feishu.channel import FeishuChannel
+_fk = _b64.b64encode(b"1" * 43).decode()
+_fc = FeishuChannel("app_id", "app_secret", _fk)
+_fp = {"msgtype": "text", "event": {
+    "tenant_key": "tk1", "sender": {"sender_id": {"open_id": "ou-9"}},
+    "message": {"content": '{"text":"飞书你好"}'}}}
+_fenc = _fc.encrypt("PRIVATEPA")
+_fc2 = FeishuChannel("app_id", "app_secret", _fk)
+check("feishu.aes", _fc2.decrypt(_fenc) == "PRIVATEPA")
+_fmc = _fc.parse(_fp)
+assert _fmc is not None
+check("feishu.parse", _fmc.from_user == "ou-9" and _fmc.text == "飞书你好"
+      and _fmc.channel == "feishu" and _fmc.tenant_id == "tk1")
+import hashlib as _fs
+_fsig = _fs.sha256(("1" + "2" + "BODY").encode()).hexdigest()
+check("feishu.verify", _fc.verify_signature(_fsig, "1", "2", "BODY")
+      and not _fc.verify_signature("deadbeef", "1", "2", "BODY"))
+check("feishu.nomsg", _fc.parse({}) is None and _fc.parse({"event": {}}) is None)
+
+# 14. 钉钉 IM 通道完整接线（签名 + AES 解密 + JSON 解析）
+from aimate.gateway.channels.dingtalk.channel import DingtalkChannel
+_dc = DingtalkChannel("cid-1", "secret-123")
+check("dingtalk.sign", _dc.verify_signature(_dc.sign("ts", "n"), "ts", "n")
+      and not _dc.verify_signature("x", "ts", "n"))
+_dp = {"msgtype": "text", "text": {"content": "钉钉你好"}, "senderStaffId": "staff-7",
+       "robotCode": "rb-1"}
+_dmc = _dc.parse(_dp)
+check("dingtalk.parse", _dmc.from_user == "staff-7" and _dmc.text == "钉钉你好"
+      and _dmc.channel == "dingtalk" and _dmc.tenant_id == "rb-1")
+_check_enc = _dc.encrypt("PRIVATE-DD")
+check("dingtalk.aes", _dc.decrypt(_check_enc) == "PRIVATE-DD")
+check("dingtalk.nomsg", _dc.parse(None) is None and _dc.parse([]) is None)
+
 
 # 12. 持久化适配层（M1-12）：sqlite 默认 + 方言探测 + 未知/缺驱动报错
 import tempfile as _tf, os as _os
