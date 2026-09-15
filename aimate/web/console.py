@@ -36,22 +36,32 @@ def _now_ms() -> float:
 # ============================================================ CSS
 _CSS = """\
 :root{
-  --ui-bg-chrome:#f8faff;--ui-bg-sidebar:#f3f7ff;--ui-bg-card:#ffffff;
+  /* openocta 设计 token（蓝化：accent 用 Nous 蓝）——背景分层 白/浅灰 */
+  --ui-bg-chrome:#ffffff;--ui-bg-sidebar:#f5f6f7;--ui-bg-card:#ffffff;
+  --ui-bg-elevated:#ffffff;
   --ui-accent:#0053fd;--ui-accent-mix:rgba(0,83,253,.08);
-  --ui-text-primary:#17181d;--ui-text-tertiary:rgba(23,24,29,.55);
-  --ui-stroke-tertiary:rgba(23,24,29,.07);
-  --ui-row-hover:rgba(0,83,253,.05);--ui-row-active:rgba(0,83,253,.11);
-  --ui-green:#1f9e63;--ui-warn:#b7791f;--ui-red:#d64545;
-  --mono:"Menlo","Monaco","SF Mono","Cascadia Code",monospace;
-  --sans:-apple-system,"SF Pro Text","Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+  --ui-text-primary:#0a0c10;--ui-text-secondary:#6b7280;--ui-text-tertiary:#9ca3af;
+  --ui-stroke-tertiary:rgba(0,0,0,.08);--ui-stroke-primary:rgba(0,0,0,.14);
+  --ui-row-hover:rgba(0,83,253,.06);--ui-row-active:rgba(0,83,253,.11);
+  --ui-green:#1f9e63;--ui-warn:#f79532;--ui-red:#e12828;
+  /* radius/shadow 体系（GB 视觉规范） */
+  --radius-sm:4px;--radius-md:6px;--radius-lg:10px;--radius-xl:14px;--radius-full:9999px;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.04),0 0 0 1px rgba(0,0,0,.03);
+  --shadow-md:0 4px 16px rgba(0,0,0,.06),0 0 0 1px rgba(0,0,0,.04);
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono","Cascadia Code",Menlo,monospace;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
 }
 html.dark{
-  --ui-bg-chrome:#0f1115;--ui-bg-sidebar:#14161c;--ui-bg-card:#1a1d24;
-  --ui-accent:#5b8cff;--ui-accent-mix:rgba(91,140,255,.1);
-  --ui-text-primary:#e8edf7;--ui-text-tertiary:rgba(232,237,247,.5);
-  --ui-stroke-tertiary:rgba(232,237,247,.07);
-  --ui-row-hover:rgba(91,140,255,.06);--ui-row-active:rgba(91,140,255,.13);
+  /* openocta 深色（蓝化） */
+  --ui-bg-chrome:#0a0c10;--ui-bg-sidebar:#0f1218;--ui-bg-card:#141820;
+  --ui-bg-elevated:#141820;
+  --ui-accent:#6b97ff;--ui-accent-mix:rgba(107,151,255,.1);
+  --ui-text-primary:#f0f2f5;--ui-text-secondary:#c8cdd4;--ui-text-tertiary:#8b939e;
+  --ui-stroke-tertiary:rgba(255,255,255,.07);--ui-stroke-primary:rgba(255,255,255,.12);
+  --ui-row-hover:rgba(107,151,255,.08);--ui-row-active:rgba(107,151,255,.15);
   --ui-green:#3ecf8e;--ui-warn:#f5b84b;--ui-red:#ff6b6b;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.05);
+  --shadow-md:0 4px 16px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.06);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -113,13 +123,13 @@ header{display:flex;align-items:center;height:44px;padding:0 14px;gap:10px;
 .msg.user{flex-direction:row-reverse}
 .msg.user .mav{background:rgba(0,83,253,.12);color:var(--ui-accent)}
 .msg.ai .mav{background:var(--ui-accent);color:#fff}
-.msg .bub{max-width:78%;padding:9px 13px;border-radius:10px;background:var(--ui-bg-card);
-  border:1px solid var(--ui-stroke-tertiary);white-space:pre-wrap;word-break:break-word;line-height:1.6}
-.msg.user .bub{background:var(--ui-accent-mix);border-color:transparent}
+.msg .bub{max-width:78%;padding:9px 13px;border-radius:var(--radius-lg);background:var(--ui-bg-card);
+  border:1px solid var(--ui-stroke-tertiary);white-space:pre-wrap;word-break:break-word;line-height:1.6;box-shadow:var(--shadow-sm)}
+.msg.user .bub{background:var(--ui-accent-mix);border-color:transparent;box-shadow:none}
 /* 输入区 */
 .composer{padding:10px 16px 14px;border-top:1px solid var(--ui-stroke-tertiary);background:var(--ui-bg-chrome)}
 .cbox{display:flex;flex-direction:column;gap:8px;background:var(--ui-bg-card);border:1px solid var(--ui-stroke-tertiary);
-  border-radius:12px;padding:8px 10px;box-shadow:0 1px 3px rgba(0,0,0,.03);transition:border-color .15s}
+  border-radius:var(--radius-xl);padding:8px 10px;box-shadow:var(--shadow-sm);transition:border-color .15s}
 .cbox:focus-within{border-color:var(--ui-accent)}
 .cstrip{display:flex;align-items:center;gap:4px}
 .cstrip .tbtn{padding:2px 7px;font-size:14px;border:0}
