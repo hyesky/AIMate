@@ -302,6 +302,7 @@ const NAVICONS={
  kb:'M4 1h8a1 1 0 0 1 1 1v12l-2.5-1.6L8 14l-2.5-1.6L3 14V2a1 1 0 0 1 1-1z',
  db:'M8 2c3 0 5 1 5 2.5S11 7 8 7 3 6 3 4.5 5 2 8 2zm0 6c2.6 0 4.4.8 4.9 1.7a4 4 0 0 1 0 2.6C12.4 13.2 10.6 14 8 14s-4.4-.8-4.9-1.7a4 4 0 0 1 0-2.6C3.6 8.8 5.4 8 8 8z',
  audit:'M8 1l6 2v5c0 4-2.5 6.5-6 7-3.5-.5-6-3-6-7V3l6-2z',
+ workbench:'M1 2a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2zm2 2v2h3V4H3zm0 4v2h3V8H3zm0 4v2h3v-2H3zm5-8h5v2H8V4zm0 4h5v2H8V8zm0 4h5v2H8v-2z',
 };
 function nav(page){document.querySelectorAll('.navitem').forEach(x=>x.classList.toggle('on',x.dataset.page===page));
  document.querySelectorAll('.nview').forEach(v=>v.classList.toggle('hidden',v.id!==(page+'view')));
@@ -314,9 +315,10 @@ function nav(page){document.querySelectorAll('.navitem').forEach(x=>x.classList.
  if(page==='market')loadAgents();
  if(page==='db')loadModels();
  if(page==='audit')loadAudit();
- if(page==='sessions'){}}
+ if(page==='sessions'){}
+ if(page==='workbench')loadStats();}
 function mountNav(){
- const items=[['chat','新建会话'],['cron','定时任务'],['market','员工市场'],['search','会话搜索'],
+ const items=[['chat','新建会话'],['workbench','工作台'],['cron','定时任务'],['market','员工市场'],['search','会话搜索'],
   ['skills','技能库'],['mcp','工具库 MCP'],['kb','知识库'],['db','模型库'],['audit','审计库']];
  $('#navwrap').innerHTML=items.map(([p,n])=>'<div class="navitem" data-page="'+p+'" onclick="nav(\''+p+'\')">'
   +'<svg viewBox="0 0 16 16"><path d="'+(NAVICONS[p]||NAVICONS.chat)+'"/></svg>'
@@ -456,6 +458,9 @@ function mountViews(){
  +'<input class="lf" id="ag-skill" placeholder="技能集（逗号分隔，如 knowledge_base,ticket）" style="width:100%;margin-bottom:6px">'
  +'<textarea class="lf" id="ag-soul" placeholder="人格与行为边界 SOUL（可选）" rows="2" style="width:100%;margin-bottom:6px"></textarea>'
  +'<button class="sendbtn" onclick="agentAdd()">＋ 注册员工</button></div></div>';
+ $('#workbenchview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>工作台概览</h3>'
+ +'<div style="display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 14px" id="stat-cards"></div>'
+ +'<div class="small" style="color:var(--ui-text-tertiary)">各模块当前规模概览。点击左侧导航进入对应模块管理。</div></div></div>';
  $('#searchview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>会话搜索</h3>'
  +'<div style="display:flex;gap:8px;margin-bottom:10px"><input class="lf" id="sq" placeholder="按关键词搜索所有会话…" style="flex:1">'
  +'<button class="sendbtn" onclick="doSessSearch()">搜索</button></div>'
@@ -541,6 +546,15 @@ async function loadAgents(){const r=await jf('/api/agents');
    +(a.skill_names&&a.skill_names.length?'<span class="small">技能: '+esc(a.skill_names.join(', '))+'</span>':'')
    +'<button class="tbtn" onclick="agentToggle(\''+esc(a.id)+'\','+(on?0:1)+')">'+stop+'</button></div>';}).join('')
    ||'<div class="small">暂无数字员工，可在下方注册入职</div>';}
+async function loadStats(){try{const r=await jf('/api/stats');const s=r.stats||{};
+ const cards=[['数字员工',s.agents,'market'],['会话',s.sessions,'chat'],['技能',s.skills,'skills'],
+  ['MCP 服务',s.mcp,'mcp'],['知识库文档',s.kb,'kb'],['定时任务',s.cron,'cron'],
+  ['LLM 后端',s.llm,'db'],['审计记录',s.audit,'audit']];
+ $('#stat-cards').innerHTML=cards.map(([n,v,page])=>{const num=(v<0)?'–':v;
+  return '<div style="flex:1;min-width:120px;background:var(--ui-bg-tertiary);border:1px solid var(--ui-stroke-tertiary);border-radius:12px;padding:12px;cursor:pointer" onclick="nav(\''+page+'\')">'
+   +'<div class="small" style="color:var(--ui-text-tertiary)">'+n+'</div>'
+   +'<div style="font-size:26px;font-weight:600;margin:2px 0">'+num+'</div></div>';}).join('');}
+ catch(e){$('#stat-cards').innerHTML='<div class="small">加载失败: '+esc(e.message)+'</div>';}}
 async function agentAdd(){const id=$('#ag-id').value.trim(),n=$('#ag-name').value.trim();
  if(!id||!n)return toast('员工 id 与名称必填');
  const sk=$('#ag-skill').value.trim().split(',').map(s=>s.trim()).filter(Boolean);
@@ -809,6 +823,7 @@ _PAGE = """<!DOCTYPE html>
         <span class="crumb" id="chat-title">新建会话</span>
       </div>
       <div id="chatview" class="nview"></div>
+      <div id="workbenchview" class="nview hidden"></div>
       <div id="cronview" class="nview hidden"></div>
       <div id="marketview" class="nview hidden"></div>
       <div id="searchview" class="nview hidden"></div>
@@ -1433,6 +1448,51 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             self._send(400, {"error": str(e)})
 
+    def _stats(self) -> None:
+        """工作台概览：聚合各模块计数。任何子项失败不阻断整体。"""
+        self._require()
+        stats = {}
+        try:
+            stats["agents"] = len(self.system.list_agents())
+        except Exception:  # noqa: BLE001
+            stats["agents"] = -1
+        try:
+            stats["sessions"] = len(self.sessions.list(self._owner()))
+        except Exception:  # noqa: BLE001
+            stats["sessions"] = -1
+        try:
+            stats["skills"] = len(self.system.skills.list("tenant-demo"))
+        except Exception:  # noqa: BLE001
+            stats["skills"] = -1
+        try:
+            servers = self.system.mcp.list_servers()
+            stats["mcp"] = len(servers)
+            stats["mcp_tools"] = len(getattr(self.system.mcp, "_schemas", {}))
+        except Exception:  # noqa: BLE001
+            stats["mcp"] = stats.get("mcp_tools", -1)
+        try:
+            if hasattr(self.system, "list_kb_docs"):
+                stats["kb"] = len(self.system.list_kb_docs())
+            elif hasattr(self.system, "kb_docs"):
+                stats["kb"] = len(self.system.kb_docs())
+            else:
+                stats["kb"] = 0
+        except Exception:  # noqa: BLE001
+            stats["kb"] = -1
+        try:
+            stats["cron"] = len(self._sched().list_jobs())
+        except Exception:  # noqa: BLE001
+            stats["cron"] = -1
+        try:
+            stats["llm"] = len(getattr(self.system.llm, "_backends", {}) or {})
+        except Exception:  # noqa: BLE001
+            stats["llm"] = -1
+        try:
+            stats["audit"] = len(self.system.audit.query("tenant-demo"))
+        except Exception:  # noqa: BLE001
+            stats["audit"] = -1
+        self._send(200, {"stats": stats})
+
     def _kb_docs(self) -> None:
         try:
             if hasattr(self.system, "list_kb_docs"):
@@ -1570,6 +1630,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 return self._kb_docs()
             if path == "/api/cron":
                 return self._cron_list()
+            if path == "/api/stats":
+                return self._stats()
             return self._send(404, {"error": "not found"})
         except Exception as e:  # noqa: BLE001
             self._send(500, {"error": f"{type(e).__name__}: {e}"})
