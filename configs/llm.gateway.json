@@ -9,8 +9,18 @@
       "timeout": 300.0,
       "max_retries": 1,
       "temperature": 0.3
+    },
+    "deepseek-test": {
+      "base_url": "http://120.79.165.22:17010",
+      "api_key": "sk-cshlc7b6ce3e1ba849debce4756d2d01",
+      "model": "deepseek-v4-flash-0731",
+      "timeout": 120.0,
+      "max_retries": 2,
+      "temperature": 0.3
     }
   },
-  "aliases": {},
-  "default": "inner-gateway"
+  "aliases": {
+    "deepseek": { "alias_of": "deepseek-test" }
+  },
+  "default": "deepseek-test"
 }

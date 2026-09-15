@@ -35,6 +35,7 @@ class Skill:
     status: SkillStatus = SkillStatus.DRAFT
     owner: str = ""                   # 'agent' 表示 agent-created，可被 Curator 处理
     pinned: bool = False              # pinned 技能跳过一切自动状态迁移
+    review_note: str = ""             # 审核意见（驳回/通过时填写）
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
     last_used_at: str = field(default_factory=_now)
@@ -56,6 +57,44 @@ class SkillStore:
         if not s:
             raise KeyError(name)
         s.status = status
+        s.updated_at = _now()
+        return s
+
+    # ---- 企业自建审批流：draft → pending_review → published / rejected ----
+    @staticmethod
+    def _can_transition(current: SkillStatus, target: SkillStatus) -> bool:
+        flow = {
+            SkillStatus.DRAFT: {SkillStatus.PENDING_REVIEW, SkillStatus.ARCHIVED},
+            SkillStatus.PENDING_REVIEW: {SkillStatus.PUBLISHED, SkillStatus.ARCHIVED,
+                                         SkillStatus.DRAFT},  # 驳回退回草稿
+            SkillStatus.PUBLISHED: {SkillStatus.ARCHIVED},
+            SkillStatus.ARCHIVED: {SkillStatus.DRAFT},
+        }
+        return target in flow.get(current, set())
+
+    def submit(self, tenant_id: str, name: str) -> Skill:
+        """草稿提交审核：draft → pending_review。"""
+        s = self.get(tenant_id, name)
+        if not s:
+            raise KeyError(name)
+        if not self._can_transition(s.status, SkillStatus.PENDING_REVIEW):
+            raise ValueError(f"当前状态 {s.status.value} 不能提交审核")
+        s.status = SkillStatus.PENDING_REVIEW
+        s.updated_at = _now()
+        return s
+
+    def review(self, tenant_id: str, name: str, approve: bool, note: str = "") -> Skill:
+        """审核：pending_review → published(通过) 或 退回 draft(驳回)。"""
+        s = self.get(tenant_id, name)
+        if not s:
+            raise KeyError(name)
+        if s.status != SkillStatus.PENDING_REVIEW:
+            raise ValueError(f"只有待审核状态可审核(当前 {s.status.value})")
+        target = SkillStatus.PUBLISHED if approve else SkillStatus.DRAFT
+        if not self._can_transition(s.status, target):
+            raise ValueError("非法状态迁移")
+        s.status = target
+        s.review_note = note
         s.updated_at = _now()
         return s
 

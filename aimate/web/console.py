@@ -450,7 +450,15 @@ function mountViews(){
  +'<div style="display:flex;gap:8px;margin-bottom:10px"><input class="lf" id="sq" placeholder="按关键词搜索所有会话…" style="flex:1">'
  +'<button class="sendbtn" onclick="doSessSearch()">搜索</button></div>'
  +'<div id="search-results" class="small"></div></div></div>';
- $('#skillsview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>技能库</h3>'
+ $('#skillsview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>技能市场</h3>'
+ 
++'<div class="panel" style="border-top:1px solid var(--ui-stroke-tertiary)"><div class="small" style="color:var(--ui-text-tertiary);margin-bottom:6px">企业自建技能（审通过后发布）</div>'
+ +'<input class="lf" id="sk-name" placeholder="技能名（小写连字符）" style="width:100%;margin-bottom:6px">'
+ +'<input class="lf" id="sk-desc" placeholder="一句话描述（≤60字）" style="width:100%;margin-bottom:6px">'
+ +'<input class="lf" id="sk-trigger" placeholder="触发短语（什么时候用）" style="width:100%;margin-bottom:6px">'
+ +'<textarea class="lf" id="sk-body" placeholder="SKILL.md 正文" rows="4" style="width:100%;margin-bottom:6px"></textarea>'
+ +'<button class="sendbtn" onclick="addSkill()">提交审核</button></div>'
+ 
  +'<div id="skills-list"></div></div></div>';
  $('#mcpview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>工具库 MCP</h3>'
  +'<div style="display:flex;gap:8px;margin-bottom:10px"><input class="lf" id="mcp-name" placeholder="名称" style="width:110px">'
@@ -491,9 +499,27 @@ function mountViews(){
 
 /* ===== 管理数据加载 ===== */
 async function loadSkills(){const r=await jf('/api/skills');
- $('#skills-list').innerHTML=(r.skills||[]).map(s=>'<div class="kv"><span class="k">'+esc(s.name)+'</span>'
- +'<span class="pill '+(s.status==='published'?'ok':'warn')+'">'+esc(s.status)+'</span>'
- +'<span>'+esc(s.description)+'</span></div>').join('')||'<div class="small">暂无技能</div>';}
+ const st=o=>'<span class="pill '+(o==='published'?'ok':o==='pending_review'?'warn':'muted')+'">'+esc(o)+'</span>';
+ $('#skills-list').innerHTML=(r.skills||[]).map(s=>{
+  let btns='';
+  if(s.status==='draft')btns+=' <button class="tbtn" onclick="submitSkill(\''+esc(s.name)+'\')">提交审核</button>';
+  if(s.status==='pending_review')btns+=' <button class="tbtn" onclick="reviewSkill(\''+esc(s.name)+'\',true)">通过</button>'
+   +' <button class="tbtn" onclick="reviewSkill(\''+esc(s.name)+'\',false)">驳回</button>';
+  let note=s.review_note?('<span class="small" style="color:var(--ui-text-tertiary)">审核意见：'+esc(s.review_note)+'</span>'):'';
+  return '<div class="kv"><span class="k">'+esc(s.name)+'</span>'+st(s.status)+btns
+   +'<span>'+esc(s.description)+'</span>'+note+'</div>';
+ }).join('')||'<div class="small">暂无技能，可上方自建一个提交审核</div>';}
+async function addSkill(){const n=$('#sk-name').value.trim(),d=$('#sk-desc').value.trim(),
+ t=$('#sk-trigger').value.trim(),b=$('#sk-body').value;
+ if(!n||!d)return toast('技能名与描述必填');
+ try{const r=await jf('/api/skills','POST',{name:n,description:d,trigger:t,body:b,status:'draft',owner:'enterprise'});
+  toast('已创建草稿 '+r.name+'，可提交审核');loadSkills()}
+ catch(e){toast('提交失败: '+e.message)}}
+async function submitSkill(n){try{const r=await jf('/api/skills/submit','POST',{name:n});toast('已提交审核 '+r.name);loadSkills()}
+ catch(e){toast(e.message)}}
+async function reviewSkill(n,ok){const note=ok?'':(prompt('驳回意见：')||'未说明');
+ try{const r=await jf('/api/skills/review','POST',{name:n,approve:ok,note:note});toast((ok?'已通过 ':'已驳回 ')+r.name);loadSkills()}
+ catch(e){toast(e.message)}}
 async function loadMcp(){const r=await jf('/api/mcp');
  $('#mcp-list').innerHTML=(r.servers||[]).map(s=>'<div class="kv"><span class="k">'+esc(s.name)+'</span>'
  +'<span class="small">'+(s.tools||[]).join(', ')+'</span></div>').join('')
@@ -1414,6 +1440,41 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         self.system.audit.record("console", "tenant-demo", "skills.create", name)
         return self._send(200, {"name": name, "status": status.value})
 
+    def _skills_submit(self) -> None:
+        """企业自建技能提交审核：draft → pending_review。"""
+        b = self._body()
+        name = (b.get("name") or "").strip()
+        if not name:
+            return self._send(400, {"error": "name 必填"})
+        try:
+            s = self.system.skills.submit("tenant-demo", name)
+        except KeyError:
+            return self._send(404, {"error": f"技能 {name} 不存在"})
+        except ValueError as e:
+            return self._send(400, {"error": str(e)})
+        self.system.audit.record("console", "tenant-demo", "skills.submit", name)
+        return self._send(200, {"name": name, "status": s.status.value})
+
+    def _skills_review(self) -> None:
+        """审核技能：pending_review → published(通过) 或 退回 draft(驳回)。"""
+        b = self._body()
+        name = (b.get("name") or "").strip()
+        if not name:
+            return self._send(400, {"error": "name 必填"})
+        approve = bool(b.get("approve", True))
+        note = (b.get("note") or "").strip()
+        try:
+            s = self.system.skills.review("tenant-demo", name, approve, note)
+        except KeyError:
+            return self._send(404, {"error": f"技能 {name} 不存在"})
+        except ValueError as e:
+            return self._send(400, {"error": str(e)})
+        self.system.audit.record("console", "tenant-demo",
+                                 "skills.review",
+                                 f"{name}->{'通过' if approve else '驳回'}")
+        return self._send(200, {"name": name, "status": s.status.value,
+                                "review_note": s.review_note})
+
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
         try:
@@ -1496,6 +1557,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 return self._api_kb_new()
             if path == "/api/skills":
                 return self._skills_add()
+            if path == "/api/skills/submit":
+                return self._skills_submit()
+            if path == "/api/skills/review":
+                return self._skills_review()
             if path == "/api/kb/open":
                 return self._api_kb_open()
             if path == "/api/kb/upload":
@@ -1653,7 +1718,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         skills = self.system.skills.list("tenant-demo")
         self._send(200, {"skills": [{"name": s.name, "description": s.description,
                                      "trigger": s.trigger, "status": s.status.value,
-                                     "owner": s.owner, "pinned": s.pinned}
+                                     "owner": s.owner, "pinned": s.pinned,
+                                     "review_note": s.review_note, "body": s.body}
                                     for s in skills]})
 
     def _mcp_list(self) -> None:
