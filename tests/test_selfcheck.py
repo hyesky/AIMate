@@ -392,6 +392,49 @@ try:
     check("llm.missing", False)
 except LLMError:
     check("llm.missing", True)
+# --- 非骨架: 流式(SSE) + 并发调度(ThreadingMixIn server 已具备多线程) ---
+class _StreamMock(http.server.BaseHTTPRequestHandler):
+    def log_message(self,*a): pass
+    def do_POST(self):
+        ln = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(ln).decode("utf-8"))
+        if body.get("stream"):
+            import time as _t
+            _t.sleep(0.03)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for tok in ["你好", "，", "世界"]:
+                self.wfile.write(("data: "+json.dumps(
+                    {"choices":[{"delta":{"content":tok}}]})+"/n/n").encode().replace(b"/n",b"\n"))
+            self.wfile.write(b"data: [DONE]\n\n")
+        else:
+            _t = __import__("time"); _t.sleep(0.08)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            m = body.get("messages",[{}])[0].get("content","")
+            self.wfile.write(json.dumps(
+                {"choices":[{"message":{"content":"ok-"+str(m)}}]}).encode())
+srv2 = _Srv(("127.0.0.1", 0), _StreamMock)
+PORT2 = srv2.server_address[1]
+th2 = threading.Thread(target=srv2.serve_forever, daemon=True); th2.start()
+gwS = LLMGateway({"s": {"base_url": f"http://127.0.0.1:{PORT2}", "model":"m1"}})
+_stream_full = "".join(gwS.resolve("s").chat_stream([{"role":"user","content":"hi"}]))
+check("llm.stream", _stream_full == "你好，世界")
+_t0 = __import__("time").time()
+_rs = gwS.chat_batch("s", [[{"role":"user","content":f"q{i}"}] for i in range(8)], max_concurrency=4)
+_t1 = __import__("time").time()
+_texts = [_r["choices"][0]["message"]["content"] for _r in _rs]
+# 并发4 × 8路(每路0.08s): 理想0.16s×2批≈0.32s, 串行0.64s → <0.55 判并发生效
+check("llm.concurrent", _texts == [f"ok-q{i}" for i in range(8)] and (_t1-_t0) < 0.55,
+      f"dt={_t1-_t0:.2f}s")
+# 限流 max_concurrency=1 → 接近串行(4路×0.08=0.32s)，限流生效
+_t2 = __import__("time").time()
+gwS.chat_batch("s", [[{"role":"user","content":"a"}]]*4, max_concurrency=1)
+_t3 = __import__("time").time()
+check("llm.throttle", (_t3-_t2) > 0.24, f"dt={_t3-_t2:.2f}s")
+srv2.shutdown()
 srv.shutdown()
 
 # 21. System 装配网关 + dispatch 端到端（mock 后端走通 dispatch→LLM→audit）

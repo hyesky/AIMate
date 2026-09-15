@@ -145,6 +145,57 @@ class OpenAICompatibleLLM:
         except (KeyError, IndexError):
             return []
 
+    # ---- 流式（SSE）----
+    def chat_stream(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ):
+        """流式补全：逐块 yield 增量文本（OpenAI SSE 格式）。
+
+        兼容非流式后端：若上游忽略 stream 参数返回完整 JSON，则一次性 yield。
+        """
+        payload: dict[str, Any] = {
+            "model": self.config.model,
+            "messages": messages,
+            "stream": True,
+            "temperature": self.config.temperature if temperature is None else temperature,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        url = self.config.base_url + self.CHAT_PATH
+        data = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=self.config.timeout) as resp:  # noqa: S310 内网网关
+            # 上游可能忽略 stream 直接返回 JSON → 检测 content-type 兜底
+            ctype = resp.headers.get("Content-Type", "")
+            if "text/event-stream" not in ctype:
+                full = json.loads(resp.read().decode("utf-8"))
+                yield self.reply_text(full)
+                return
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                delta = chunk["choices"][0].get("delta", {}).get("content")
+                if delta:
+                    yield delta
+
 
 # ---------------------------------------------------------------------------
 # 网关注册表 + 别名映射（借鉴开源 model_aliases 配置思想，自研实现）
@@ -182,6 +233,35 @@ class LLMGateway:
         **kw: Any,
     ) -> dict:
         return self.resolve(alias).chat(messages, tools=tools, **kw)
+
+    # ---- 并发调度（非骨架）：多路并发 + 信号量限流 + 汇总 ----
+    def chat_batch(
+        self,
+        alias: str,
+        requests: list[list[dict]],
+        max_concurrency: int = 4,
+    ) -> list[dict]:
+        """并发处理多路对话请求（如批量数字员工任务）。
+
+        - 线程池 + 信号量控制并发上限
+        - 每路独立调用后端 chat，返回对应响应列表（顺序与 requests 一致）
+        `ponytail:` 线程池对 IO-bound 够用；若需要跨进程隔离/故障转移再升级进程池。
+        """
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        backend = self.resolve(alias)
+        sem = threading.Semaphore(max_concurrency)
+        results: list = [None] * len(requests)
+
+        def _run(i: int, msgs: list[dict]) -> None:
+            with sem:
+                results[i] = backend.chat(msgs)
+
+        with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
+            pool.map(lambda idx: _run(idx, requests[idx]), range(len(requests)))
+        return results
+
 
     # ---- 成本/配额 近似（内网 LLM 计费/审计用） ----
     @staticmethod
