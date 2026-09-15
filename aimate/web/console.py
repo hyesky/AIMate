@@ -539,7 +539,7 @@ async function loadAgents(){const r=await jf('/api/agents');
   return '<div class="kv"><span class="k">'+esc(a.name)+'</span>'+st
    +'<span class="small">#'+esc(a.id)+' · '+role(a.role)+' · 模型 '+esc(a.model)+'</span>'
    +(a.skill_names&&a.skill_names.length?'<span class="small">技能: '+esc(a.skill_names.join(', '))+'</span>':'')
-   +'<button class="tbtn" onclick="agentToggle(\\''+esc(a.id)+'\\','+(on?0:1)+')">'+stop+'</button></div>';}).join('')
+   +'<button class="tbtn" onclick="agentToggle(\''+esc(a.id)+'\','+(on?0:1)+')">'+stop+'</button></div>';}).join('')
    ||'<div class="small">暂无数字员工，可在下方注册入职</div>';}
 async function agentAdd(){const id=$('#ag-id').value.trim(),n=$('#ag-name').value.trim();
  if(!id||!n)return toast('员工 id 与名称必填');
