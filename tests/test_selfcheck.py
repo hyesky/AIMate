@@ -347,6 +347,18 @@ check("rag.norm_range", all(0 <= x <= 1 for x in _normalize([3.0,1.0,2.0])))
 # 无向量退化为 RRF 仍可用
 hits2 = kb2.search("内网推理网关", top_k=2)[0]
 check("rag.degrade_rrf", kb2.fusion=="weighted" and hasattr(hits2,"snippet"))
+# 生产化：MMR 多样重排
+from aimate.rag.engine import Hit as _Hit
+_mmrh = [_Hit("d1", 0.9, "cold fusion reactor power"), _Hit("d2", 0.8, "cold fusion energy output"),
+         _Hit("d3", 0.1, "completely different unrelated topic")]
+_rl = KnowledgeBase.rerank_mmr(_mmrh, "cold fusion", lambda_=1.0, top_k=3)
+check("rag.mmr_related", [_h.doc_id for _h in _rl] == ["d1","d2","d3"])  # λ=1 纯相关→原序
+_r2 = KnowledgeBase.rerank_mmr(_mmrh, "cold fusion", lambda_=0.1, top_k=3)
+# λ→0 多样性把与已选高度相似的候选(d2)压后，无关项(d3)提前
+check("rag.mmr_diverse", [_h.doc_id for _h in _r2].index("d3") < [_h.doc_id for _h in _r2].index("d2"))
+# rerank 开关走通 search 全链路
+_rhs = kb2.search("内网推理网关", top_k=2, rerank=True)
+check("rag.rerank_ok", len(_rhs) > 0 and all(hasattr(hh,"snippet") for hh in _rhs))
 
 # 20. 内网 LLM 网关（mock OpenAI 兼容端点端到端）
 import http.server, threading, socketserver

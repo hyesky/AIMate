@@ -221,6 +221,8 @@ class KnowledgeBase:
         top_k: int = 5,
         kinds: set[str] | None = None,
         candidate_mult: int = 3,
+        rerank: bool = False,
+        rerank_lambda: float = 0.7,
     ) -> list[Hit]:
         if not query.strip():
             return []
@@ -247,11 +249,12 @@ class KnowledgeBase:
                 if h.doc_id not in meta:
                     meta[h.doc_id] = h
             order = sorted(combined, key=combined.get, reverse=True)
-            return [
+            result = [
                 self._decorate(meta[oid], query)
                 for oid in order[:top_k]
                 if oid in meta
             ]
+            return self.rerank_mmr(result, query, rerank_lambda, top_k) if rerank else result
 
         # 默认/降级：RRF 融合
         merged: dict[str, float] = {}
@@ -261,9 +264,52 @@ class KnowledgeBase:
             merged[h.doc_id] = merged.get(h.doc_id, 0) + 1 / (60 + rank)
         order = sorted(merged, key=merged.get, reverse=True)
         m = {h.doc_id: h for h in [*sparse, *dense]}
-        return [self._decorate(m[oid], query) for oid in order[:top_k] if oid in m]
+        result = [self._decorate(m[oid], query) for oid in order[:top_k] if oid in m]
+        return self.rerank_mmr(result, query, rerank_lambda, top_k) if rerank else result
 
     @staticmethod
     def _decorate(hit: Hit, query: str) -> Hit:
         hit.snippet = _make_snippet(hit.text, query)
         return hit
+
+    # ---- 生产化：MMR 多样重排（缓解同一文档多段落垄断 top-k）----
+    @staticmethod
+    def rerank_mmr(
+        hits: list[Hit],
+        query: str,
+        lambda_: float = 0.7,
+        top_k: int | None = None,
+    ) -> list[Hit]:
+        """最大边际相关（MMR）重排：综合相关度与多样性。
+
+        MMR = argmax [ λ·sim(query,item) − (1−λ)·max_{已选} sim(item,已选) ]
+
+        - λ 高 → 越看重相关度；λ 低 → 越看重多样性（λ=0.7 常用）
+        - 相似度基于查询与候选中英文词的 Jaccard（纯 stdlib，无需向量）
+        """
+        if not hits:
+            return []
+        def _jac(a: str, b: str) -> float:
+            sa = set(re.findall(r"[a-zA-Z0-9_]+", a.lower()))
+            sb = set(re.findall(r"[a-zA-Z0-9_]+", b.lower()))
+            if not sa or not sb:
+                return 0.0
+            return len(sa & sb) / len(sa | sb)
+        qtok = " ".join(re.findall(r"[a-zA-Z0-9_]+", query.lower()))
+        for h in hits:
+            h.score = _jac(qtok, h.text)
+        remaining = list(hits)
+        chosen: list[Hit] = []
+        k = top_k if top_k is not None else len(remaining)
+        while remaining and len(chosen) < k:
+            best, best_val = None, float("-inf")
+            for h in remaining:
+                rel = _jac(qtok, h.text)
+                div = max((_jac(h.text, g.text) for g in chosen), default=0.0)
+                val = lambda_ * rel - (1 - lambda_) * div
+                if val > best_val:
+                    best, best_val = h, val
+            assert best is not None  # remaining 非空必有最优
+            chosen.append(best)
+            remaining.remove(best)
+        return chosen
