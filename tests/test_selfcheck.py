@@ -107,8 +107,23 @@ except _LERR:
 a = AuditLog(); a.record("it-support","t","memory.write","aimate/memory","add 一条")
 check("audit.query", len(a.query("t","memory.write"))==1)
 
-# 7. 国密接口可用
-check("smm3_hex", len(sm3_hex(b"hello")) == 64)
+# 7. 国密合规实现（标准向量自检）
+from aimate.security import gm as _gm
+check("gm.sm3_vec",
+      _gm.sm3_hex(b"abc") == "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"
+      and _gm.sm3_hex(b"abcd" * 16) == "debe9ff92275b8a138604889c18e5a4d6fdb70e5387e5765293dcba39c0c5732")
+_gm_key = bytes.fromhex("0123456789abcdeffedcba9876543210")
+_gm_pt = bytes.fromhex("0123456789abcdeffedcba9876543210")
+_gm_ct = _gm.SM4(_gm_key).encrypt_ecb(_gm_pt)
+check("gm.sm4_vec", _gm_ct.hex().upper() == "681EDF34D206965E86B3E94F536E4246"
+      and _gm.SM4(_gm_key).decrypt_ecb(_gm_ct) == _gm_pt)
+check("sm3_hex_len", len(sm3_hex(b"hello")) == 64)
+_gm_priv, _gm_pub = _gm.generate_sm2_keypair()
+_gm_sig = _gm.sm2_sign(_gm_priv, b"license-v1|t|2026|pro")
+check("gm.sm2_roundtrip", _gm.sm2_verify(_gm_pub, b"license-v1|t|2026|pro", _gm_sig)
+      and not _gm.sm2_verify(_gm_pub, b"tampered", _gm_sig))
+check("gm.require",
+      "SM2" in __import__("aimate.security.audit", fromlist=["x"]).require_gm())
 
 # 8. RBAC
 sys_ = build_system(); sys_.bootstrap_demo()
