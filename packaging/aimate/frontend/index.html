@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>AIMate 管控台</title>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; background: #0f1419; }
+        #frame { width: 100%; height: 100%; border: 0; display: block; }
+        #wait { position: fixed; inset: 0; display: flex; align-items: center;
+                justify-content: center; color: #8899aa; font: 15px/1.5 system-ui;
+                flex-direction: column; gap: 10px; background: #0f1419; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #4f8cff;
+               animation: pulse 1.1s infinite; }
+        @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+    </style>
+</head>
+<body>
+    <div id="wait">
+        <div class="dot"></div>
+        <span>正在启动 AIMate 数字员工…</span>
+    </div>
+    <iframe id="frame" style="display:none"></iframe>
+    <script>
+        // 启动 python console 服务并加载其 Web UI。
+        // console 服务尚未就绪时显示加载态，就绪后载入 iframe。
+        window.addEventListener('DOMContentLoaded', async () => {
+            const frame = document.getElementById('frame');
+            const wait = document.getElementById('wait');
+            try {
+                // 通过 Wails 绑定方法获取 AIMate Web UI 地址（同时触发服务启动）
+                const url = await window['go']['main']['App'].ConsoleURL();
+                // 轮询等待服务就绪
+                let ready = false;
+                for (let i = 0; i < 60 && !ready; i++) {
+                    try {
+                        const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+                        ready = r.ok;
+                    } catch (e) { /* not ready */ }
+                    if (!ready) await new Promise(r => setTimeout(r, 700));
+                }
+                frame.src = url;
+                frame.style.display = 'block';
+                wait.style.display = 'none';
+            } catch (e) {
+                wait.innerHTML = '<span>启动失败: ' + (e && e.message ? e.message : e) + '</span>';
+            }
+        });
+    </script>
+</body>
+</html>

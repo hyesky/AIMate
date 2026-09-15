@@ -29,3 +29,6 @@ dist/
 data/
 *.db
 *.sqlite3
+
+# Wails builds
+packaging/aimate/aimate
