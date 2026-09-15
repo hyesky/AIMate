@@ -89,6 +89,28 @@ check("feishu.sign", feishu.verify_signature("t","n","b", sig))
 from aimate.memory.gate import is_trivial_prompt
 check("gate.trivial", is_trivial_prompt("ok") and is_trivial_prompt("好的。")
       and is_trivial_prompt("继续") and is_trivial_prompt("") and is_trivial_prompt("/learn x"))
+
+# 11. 企微 IM 通道完整接线（验签 + AES 解密 + XML 解析 roundtrip）
+import base64 as _b64
+from aimate.gateway.channels.wecom.channel import WecomChannel
+_wc = WecomChannel("ww123", "1000002", "secret", "TOKEN",
+                   _b64.b64encode(b"0" * 43).decode())
+_wc_xml = ("<xml><ToUserName>corpId</ToUserName><FromUserName>u-1</FromUserName>"
+           "<MsgType>text</MsgType><Content>你好世界</Content></xml>")
+_wc_enc = _wc.encrypt(_wc_xml)
+check("wecom.roundtrip", _wc.decrypt(_wc_enc) == _wc_xml)
+_wc_msg = _wc.parse(_wc_xml)
+check("wecom.parse", _wc_msg.from_user == "u-1"
+      and _wc_msg.text == "你好世界" and _wc_msg.channel == "wecom")
+import hashlib as _hl
+_wc_sig = _hl.sha1("".join(sorted(["TOKEN", "123", "n", "SOMEENC"])).encode()).hexdigest()
+check("wecom.verify", _wc.verify_signature(_wc_sig, "123", "n", "SOMEENC"))
+check("wecom.verify_bad", not _wc.verify_signature("deadbeef", "123", "n", "SOMEENC"))
+try:
+    WecomChannel("w", "a", "s", "t", "badkey")
+    check("wecom.badkey", False)
+except Exception:
+    check("wecom.badkey", True)
 check("gate.semantic", not is_trivial_prompt("帮我查一下内网网关配置")
       and not is_trivial_prompt("根据 RAG 召回生成总结"))
 
