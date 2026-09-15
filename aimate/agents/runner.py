@@ -25,6 +25,7 @@ BUILTIN_TOOLS = {
     "search_sessions": "跨会话全文搜索历史聊天记录（FTS5），召回用户之前提过的需求/问题——当用户提到「之前提过/改过的问题」时用它确认历史需求",
     "delegate_task": "把任务拆分为独立子任务并委派给子 Agent 并行执行，返回各子任务摘要",
     "execute_code": "在隔离沙箱子进程中执行一段 Python 代码，返回其 stdout/stderr",
+    "skill_create": "把本次对话/工作流沉淀为一个企业技能(SKILL.md)草稿，存入库供审批后发布——自我进化闭环的一环",
 }
 
 # 子 Agent 必须屏蔽的工具（防止递归委派 / 污染共享状态）——借鉴 hermes
@@ -200,6 +201,27 @@ class AgentRunner:
             code = args.get("code") or ""
             timeout = min(float(args.get("timeout", 300) or 300), 600)
             return execute_code(code, timeout=timeout)
+        if name == "skill_create":
+            from aimate.skills.store import Skill, SkillStatus
+            from aimate.skills.learn import validate_description
+
+            name = str(args.get("name") or "").strip()
+            desc = str(args.get("description") or "").strip()
+            body = args.get("body") or ""
+            if not name or not desc or not body:
+                raise ToolExecutionError("skill_create 需 name/description/body 三个字段")
+            ok, msg = validate_description(desc)
+            if not ok:
+                raise ToolExecutionError(f"description 校验失败: {msg}")
+            tenant = str(args.get("tenant_id") or "tenant-demo")
+            if sys.skills.get(tenant, name):
+                raise ToolExecutionError(f"技能 {name} 已存在")
+            sys.skills.create(Skill(name=name, tenant_id=tenant, description=desc,
+                                    trigger=args.get("trigger", ""), body=body,
+                                    status=SkillStatus.DRAFT, owner="agent"))
+            self._fire("on_skill_created", name=name)  # 自我进化闭环钩子（Curator 等监听）
+            return {"name": name, "status": "draft",
+                    "note": "已写入技能库草稿，需审批后发布"}
         if "__" in name:
             return sys.mcp.call_tool(name, args)
         raise ToolExecutionError(f"未知工具: {name}")
@@ -259,4 +281,19 @@ def _builtin_params(name: str) -> dict:
         from aimate.agents.code_exec import schema as _code_schema
 
         return _code_schema()
+    if name == "skill_create":
+        return {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string",
+                         "description": "技能名：小写连字符，<=64 字符"},
+                "description": {"type": "string",
+                                "description": "一句话描述，<=60 字符，以句号结尾"},
+                "trigger": {"type": "string",
+                            "description": "什么时候该用这个技能（触发短语）"},
+                "body": {"type": "string",
+                         "description": "SKILL.md 正文（含 frontmatter 与 # 标题等小节）"},
+            },
+            "required": ["name", "description", "body"],
+        }
     return {"type": "object", "properties": {}}

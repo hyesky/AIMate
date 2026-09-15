@@ -39,6 +39,7 @@ class Skill:
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
     last_used_at: str = field(default_factory=_now)
+    history: list[dict] = field(default_factory=list)  # 旧版本快照（回滚用）
 
 
 class SkillStore:
@@ -125,6 +126,48 @@ class SkillStore:
         s = self.get(tenant_id, name)
         if s:
             s.last_used_at = _now()
+
+    # ---- 技能版本与回滚：update 保留旧快照，rollback 可随时恢复 ----
+    def _snapshot(self, s: Skill) -> dict:
+        return {"version": s.version, "description": s.description,
+                "trigger": s.trigger, "body": s.body, "at": _now()}
+
+    def update(self, tenant_id: str, name: str, *, description: str | None = None,
+               trigger: str | None = None, body: str | None = None) -> Skill:
+        """更新技能正文，旧版本入 history、version 递增（可回滚）。"""
+        s = self.get(tenant_id, name)
+        if not s:
+            raise KeyError(name)
+        s.history.append(self._snapshot(s))
+        if description is not None:
+            s.description = description
+        if trigger is not None:
+            s.trigger = trigger
+        if body is not None:
+            s.body = body
+        s.version += 1
+        s.updated_at = _now()
+        return s
+
+    def rollback(self, tenant_id: str, name: str) -> Skill:
+        """回滚到上一版本（出栈最新一条历史），返回回滚后的技能。"""
+        s = self.get(tenant_id, name)
+        if not s:
+            raise KeyError(name)
+        if not s.history:
+            raise ValueError(f"技能 {name} 无可回滚的历史版本")
+        prev = s.history.pop()
+        s.description, s.trigger, s.body = prev["description"], prev["trigger"], prev["body"]
+        s.version = prev["version"]
+        s.updated_at = _now()
+        return s
+
+    def history(self, tenant_id: str, name: str) -> list[dict]:
+        """返回全部历史版本快照（不含当前，从旧到新）。"""
+        s = self.get(tenant_id, name)
+        if not s:
+            raise KeyError(name)
+        return list(s.history)
 
 
 class Curator:

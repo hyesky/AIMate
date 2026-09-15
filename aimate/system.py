@@ -40,6 +40,20 @@ class System:
             return []
         return self.sessions.search(query, owner, limit)
 
+    def run_curator(self, used_names: set[str] | None = None,
+                    tenant_id: str = "tenant-demo") -> dict:
+        """手动/后台跑一轮技能策展（自我进化）：归档闲置 + 标记陈旧。
+
+        used_names: 本轮真实被调用的技能名集合（决策引擎可传入）；缺省按
+        last_used_at 活动度判定。返回 {archived, stale} 供上层展示/审计。
+        """
+        used = used_names or set()
+        archived = self.curator.archive_unused(tenant_id, used)
+        stale = self.curator.mark_stale(tenant_id, used)
+        for n in archived:
+            self.audit.record("curator", tenant_id, "skills.auto_archive", n)
+        return {"archived": archived, "stale": stale}
+
     def configure_llm(self, path_or_dict) -> None:
         """从 JSON 配置文件装配内网 LLM 网关。可传路径或直接传 dict。"""
         import json

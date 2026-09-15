@@ -28,6 +28,17 @@ def cmd_learn(args) -> int:
     return 0
 
 
+def cmd_curator(args) -> int:
+    """自我进化：跑一轮技能策展（归档闲置、标记陈旧）。"""
+    from aimate.system import build_system
+    sys_ = build_system()
+    res = sys_.run_curator()
+    print(f"[AIMate] Curator 一轮策展完成：")
+    print(f"  归档 {len(res['archived'])} 条闲置技能: {', '.join(res['archived']) or '无'}")
+    print(f"  标记 {len(res['stale'])} 条陈旧技能: {', '.join(res['stale']) or '无'}")
+    return 0
+
+
 def cmd_server(args) -> int:
     from aimate.gateway.api.api import GatewayAPI, ChatRequest
     from aimate.gateway.auth.auth import Role
@@ -148,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     p_learn.add_argument("--context", help="附加上下文(如'本次会话刚做完的事')")
     p_gt = sub.add_parser("gateway:test", help="验证内网 LLM 网关连通性")
     p_gt.add_argument("--config", help="网关 JSON 配置路径")
+    sub.add_parser("curator", help="自我进化：跑一轮技能策展(归档闲置/标记陈旧)")
     args = p.parse_args(argv)
     if args.cmd == "init":
         return cmd_init(args)
@@ -159,6 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_learn(args)
     if args.cmd == "gateway:test":
         return cmd_gateway_test(args)
+    if args.cmd == "curator":
+        return cmd_curator(args)
     p.print_help()
     return 0
 
