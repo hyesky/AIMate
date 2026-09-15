@@ -17,3 +17,19 @@ to this in your browser, and you can call your Go code from devtools.
 ## Building
 
 To build a redistributable, production mode package, use `wails build`.
+
+## Windows 交叉编译（在 macOS 上打 Windows 包）
+
+前置：`wails` CLI（`~/go/bin/wails`）、前端依赖、`makensis`（NSIS 安装器，`brew install makensis`）。
+
+```sh
+cd packaging/aimate
+export PATH=$PATH:$HOME/go/bin
+# 裸可执行（无 CGO；Wails v2 用 WebView2Loader 纯 Go，可跨 OS 编译）
+wails build -platform windows/amd64 -skipbindings
+# 或带 NSIS 安装器
+wails build -platform windows/amd64 -skipbindings -nsis
+```
+
+产物：`build/bin/aimate.exe`（裸可执行）、`build/bin/aimate-amd64-installer.exe`（NSIS 安装器）。
+`build/bin/` 已在 `.gitignore`，不提交二进制。
