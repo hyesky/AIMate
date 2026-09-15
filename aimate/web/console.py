@@ -311,6 +311,7 @@ function nav(page){document.querySelectorAll('.navitem').forEach(x=>x.classList.
  if(page==='cron')loadCron();
  if(page==='skills')loadSkills();
  if(page==='mcp')loadMcp();
+ if(page==='market')loadAgents();
  if(page==='db')loadModels();
  if(page==='audit')loadAudit();
  if(page==='sessions'){}}
@@ -444,8 +445,17 @@ function mountViews(){
  +'<button class="sendbtn" onclick="cronAdd()">＋ 新建任务</button></div>'
  +'<h4 style="margin:0 0 6px;font-size:13px">📅 任务列表</h4><div id="cron-list" class="small"></div>'
  +'<h4 style="margin:14px 0 6px;font-size:13px">🕘 执行历史</h4><div id="cron-runs" class="small"></div></div></div>';
- $('#marketview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>员工市场</h3>'
- +'<p class="small">浏览/安装数字员工 Agent。（开发中 — P3 接入）</p></div></div>';
+ $('#marketview').innerHTML='<div class="msgs scroll">'
+ +'<div class="panel"><h3>员工市场</h3>'
+ +'<div id="agent-list" class="small"></div>'
+ +'<button class="tbtn" onclick="loadAgents()" style="margin-top:8px">刷新</button></div>'
+ +'<div class="panel" style="border-top:1px solid var(--ui-stroke-tertiary)"><div class="small" style="color:var(--ui-text-tertiary);margin-bottom:6px">企业自建数字员工（注册后入职，可按技能集调度）</div>'
+ +'<div style="display:flex;gap:6px;margin-bottom:6px"><input class="lf" id="ag-id" placeholder="员工 id（如 ops-robot）" style="flex:1">'
+ +'<input class="lf" id="ag-name" placeholder="显示名称" style="flex:1"></div>'
+ +'<input class="lf" id="ag-role" placeholder="角色（employee/expert/ops，默认 employee）" style="width:100%;margin-bottom:6px">'
+ +'<input class="lf" id="ag-skill" placeholder="技能集（逗号分隔，如 knowledge_base,ticket）" style="width:100%;margin-bottom:6px">'
+ +'<textarea class="lf" id="ag-soul" placeholder="人格与行为边界 SOUL（可选）" rows="2" style="width:100%;margin-bottom:6px"></textarea>'
+ +'<button class="sendbtn" onclick="agentAdd()">＋ 注册员工</button></div></div>';
  $('#searchview').innerHTML='<div class="msgs scroll"><div class="panel"><h3>会话搜索</h3>'
  +'<div style="display:flex;gap:8px;margin-bottom:10px"><input class="lf" id="sq" placeholder="按关键词搜索所有会话…" style="flex:1">'
  +'<button class="sendbtn" onclick="doSessSearch()">搜索</button></div>'
@@ -520,6 +530,25 @@ async function submitSkill(n){try{const r=await jf('/api/skills/submit','POST',{
 async function reviewSkill(n,ok){const note=ok?'':(prompt('驳回意见：')||'未说明');
  try{const r=await jf('/api/skills/review','POST',{name:n,approve:ok,note:note});toast((ok?'已通过 ':'已驳回 ')+r.name);loadSkills()}
  catch(e){toast(e.message)}}
+async function loadAgents(){const r=await jf('/api/agents');
+ const role=role=>{const m={employee:'员工',expert:'专家',ops:'运维'};return m[role]||role};
+ $('#agent-list').innerHTML=(r.agents||[]).map(a=>{
+  const on=a.status==='idle';
+  const stop=on?'停用':'启用';
+  const st='<span class="pill '+(on?'ok':'muted')+'">'+(on?'在线':'停用')+'</span>';
+  return '<div class="kv"><span class="k">'+esc(a.name)+'</span>'+st
+   +'<span class="small">#'+esc(a.id)+' · '+role(a.role)+' · 模型 '+esc(a.model)+'</span>'
+   +(a.skill_names&&a.skill_names.length?'<span class="small">技能: '+esc(a.skill_names.join(', '))+'</span>':'')
+   +'<button class="tbtn" onclick="agentToggle(\\''+esc(a.id)+'\\','+(on?0:1)+')">'+stop+'</button></div>';}).join('')
+   ||'<div class="small">暂无数字员工，可在下方注册入职</div>';}
+async function agentAdd(){const id=$('#ag-id').value.trim(),n=$('#ag-name').value.trim();
+ if(!id||!n)return toast('员工 id 与名称必填');
+ const sk=$('#ag-skill').value.trim().split(',').map(s=>s.trim()).filter(Boolean);
+ try{const r=await jf('/api/agent','POST',{id:id,name:n,role:$('#ag-role').value.trim(),skill_names:sk,soul_md:$('#ag-soul').value.trim()});
+  toast('已注册员工 '+r.agent.name);$('#ag-id').value='';$('#ag-name').value='';loadAgents()}
+ catch(e){toast(e.message)}}
+async function agentToggle(id,on){try{const r=await jf('/api/agent/status','POST',{id,status:on?'active':'offline'});
+  toast((on?'已启用 ':'已停用 ')+id);loadAgents()}catch(e){toast(e.message)}}
 async function loadMcp(){const r=await jf('/api/mcp');
  $('#mcp-list').innerHTML=(r.servers||[]).map(s=>'<div class="kv"><span class="k">'+esc(s.name)+'</span>'
  +'<span class="small">'+(s.tools||[]).join(', ')+'</span></div>').join('')
@@ -1369,17 +1398,40 @@ class ConsoleHandler(BaseHTTPRequestHandler):
 
     def _agents(self) -> None:
         try:
-            if hasattr(self.system.api, "list_agents"):
-                agents = self.system.api.list_agents()
-            else:
-                agents = [{"id": a, "name": a, "description": ""}
-                          for a in (self.agent_ids or [])]
-            self._send(200, {"agents": [{"id": a.get("id", a.get("agent_id", "")),
-                                         "name": a.get("name", a.get("id", "")),
-                                         "description": a.get("description", "")}
-                                        for a in agents]})
+            agents = self.system.list_agents()
+            self._send(200, {"agents": agents})
         except Exception as e:  # noqa: BLE001
             self._send(200, {"agents": [], "error": str(e)})
+
+    def _agent_add(self) -> None:
+        """员工市场：企业自建注册一个数字员工并入职。"""
+        b = self._body()
+        aid = (b.get("id") or "").strip()
+        name = (b.get("name") or "").strip()
+        if not aid or not name:
+            self._send(400, {"error": "员工 id 与名称必填"})
+            return
+        try:
+            a = self.system.register_agent(
+                aid, name, role=b.get("role", "employee") or "employee",
+                soul_md=b.get("soul_md", "") or "",
+                skill_names=(b.get("skill_names") or []) if isinstance(
+                    b.get("skill_names"), list) else [s.strip() for s in str(
+                        b.get("skill_names") or "").split(",") if s.strip()],
+                model=b.get("model", "inner-gateway") or "inner-gateway")
+            self._send(200, {"ok": True, "agent": {
+                "id": a.id, "name": a.name, "status": a.status.value}})
+        except Exception as e:  # noqa: BLE001
+            self._send(400, {"error": f"注册失败: {e}"})
+
+    def _agent_status(self) -> None:
+        b = self._body()
+        try:
+            res = self.system.set_agent_status(str(b.get("id") or ""),
+                                               str(b.get("status") or ""))
+            self._send(200, res)
+        except Exception as e:  # noqa: BLE001
+            self._send(400, {"error": str(e)})
 
     def _kb_docs(self) -> None:
         try:
@@ -1547,6 +1599,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 return self._session_upload(path.split("/")[-2])
             if path == "/api/mcp":
                 return self._mcp_add()
+            if path == "/api/agent":
+                return self._agent_add()
+            if path == "/api/agent/status":
+                return self._agent_status()
             if path == "/api/mcp/call":
                 return self._mcp_call()
             if path == "/api/kb/search":

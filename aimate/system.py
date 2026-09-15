@@ -112,6 +112,44 @@ class System:
         from aimate.gateway.api.api import GatewayAPI
         self.api = GatewayAPI(self.auth, system=self)
 
+    # ---- 数字员工市场 ----
+    def list_agents(self, tenant_id: str = "tenant-demo") -> list[dict]:
+        """枚举租户下已注册数字员工（供员工市场列表）。"""
+        from aimate.agents.core import list_by_tenant
+
+        return [
+            {
+                "id": a.id, "name": a.name, "role": a.role,
+                "status": a.status.value, "soul_md": a.soul_md,
+                "skill_names": list(a.skill_names), "model": a.model,
+            }
+            for a in list_by_tenant(tenant_id)
+        ]
+
+    def register_agent(self, agent_id: str, name: str, tenant_id: str = "tenant-demo",
+                       role: str = "employee", soul_md: str = "",
+                       skill_names: list[str] | None = None, model: str = "inner-gateway",
+                       ) -> "Agent":
+        """企业自建数字员工注册（进入员工市场，默认可被调度）。"""
+        from aimate.agents.core import Agent, register
+
+        a = Agent(id=agent_id, name=name, tenant_id=tenant_id, role=role,
+                  soul_md=soul_md, skill_names=list(skill_names or []), model=model)
+        register(a)
+        return a
+
+    def set_agent_status(self, agent_id: str, status: str,
+                         tenant_id: str = "tenant-demo") -> dict:
+        """启停数字员工（online/offline）——员工市场启停按钮后端。"""
+        from aimate.agents.core import AgentStatus, get
+
+        a = get(agent_id, tenant_id)
+        if not a:
+            return {"ok": False, "error": f"数字员工 {agent_id} 不存在"}
+        st = AgentStatus.OFFLINE if status in ("offline", "stop", "下线") else AgentStatus.IDLE
+        a.status = st
+        return {"ok": True, "status": st.value}
+
     def search_kb(self, query: str):
         return self.rag.search(query, top_k=3)
 

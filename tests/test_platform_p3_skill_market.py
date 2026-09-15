@@ -140,6 +140,24 @@ def main():
     except Exception:
         check("非法描述被拒", True)
 
+    # ---- P3 员工市场：注册/枚举/启停 ---- 
+    from aimate.system import System
+    ms = System()
+    ms.register_agent("ops-robot", "巡检机器人", role="ops",
+                      skill_names=["ticket", "knowledge_base"])
+    listed = ms.list_agents()
+    check("员工市场列出已注册员工", any(a["id"] == "ops-robot" for a in listed))
+    entry = next(a for a in listed if a["id"] == "ops-robot")
+    check("员工含角色与技能集", entry["role"] == "ops"
+          and "ticket" in entry["skill_names"])
+    check("新员工默认在线(IDLE)", entry["status"] == "idle")
+    res = ms.set_agent_status("ops-robot", "offline")
+    check("停用员工返回 ok", res["ok"] and res["status"] == "offline")
+    after = ms.set_agent_status("ops-robot", "active")
+    check("重新启用员工", after["ok"] and after["status"] == "idle")
+    missing = ms.set_agent_status("nope", "offline")
+    check("停用不存在员工失败", not missing["ok"])
+
     print(f"\nP3 技能体系全部通过 ✔ ({PASS} checks)")
 
 
