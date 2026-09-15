@@ -65,6 +65,44 @@ check("license.feature", lic.has_feature("rag"))
 lic.seat_used = 1
 check("license.seat_gate", not lic.can_allocate_seat())
 
+# 5b. License 商业化（M2-23）：离线 .lic 文件 + 配额弹性 + 在线激活
+import tempfile as _ltf, os as _os
+from aimate.license.manager import LicenseManager as _LMA, LicenseError as _LERR
+_lm = _LMA()
+_lf = _os.path.join(_ltf.mkdtemp(), "a.lic")
+open(_lf, "w").write(json.dumps(
+    {"issued_at": 0, "expires_at": -1, "features": ["rag"], "max_seats": 2}))
+_lb = _lm.load_file(_lf, "t-lic")
+check("license.lic_file", _lb.max_seats == 2 and "rag" in _lb.features)
+_lm.gate_seat(_lb); _lm.gate_seat(_lb)
+check("license.seat_block", _lb.remaining_seats == 0)
+try:
+    _lm.gate_seat(_lb); check("license.seat_over", False)
+except _LERR:
+    check("license.seat_over", True)
+_lm.release_seat(_lb)
+check("license.seat_release", _lb.remaining_seats == 1)
+# 在线激活：本地模拟激活服务器
+from http.server import BaseHTTPRequestHandler as _BH, HTTPServer as _HT
+import threading as _th
+class _AH(_BH):
+    def do_GET(self):
+        b = json.dumps({"issued_at": 0, "expires_at": -1,
+                        "features": ["workflow"], "max_seats": 5}).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(b)))
+        self.end_headers(); self.wfile.write(b)
+    def log_message(self, *a): pass
+_asrv = _HT(("127.0.0.1", 0), _AH)
+_th.Thread(target=_asrv.serve_forever, daemon=True).start()
+_lic2 = _lm.activate(f"http://127.0.0.1:{_asrv.server_address[1]}", "t-online", "K")
+check("license.activate", _lic2.max_seats == 5 and _lic2.remaining_seats == 5)
+_asrv.shutdown()
+try:
+    _lm.activate("http://127.0.0.1:1", "t", "K")
+    check("license.activate_fail", False)
+except _LERR:
+    check("license.activate_fail", True)
+
 # 6. 审核（记忆写留痕）
 a = AuditLog(); a.record("it-support","t","memory.write","aimate/memory","add 一条")
 check("audit.query", len(a.query("t","memory.write"))==1)
