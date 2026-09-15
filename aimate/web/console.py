@@ -781,6 +781,8 @@ document.addEventListener('DOMContentLoaded',boot);
 """
 
 # ============================================================ HTML
+_UI_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "dist")
+
 _PAGE = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -897,8 +899,30 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             pass
 
     def _html(self):
+        """优先返回 Vite 构建产物（ui/dist/index.html），无产物时回退内嵌旧页面。"""
+        idx = os.path.join(_UI_DIST, "index.html")
+        if os.path.isfile(idx):
+            try:
+                pg = open(idx, encoding="utf-8").read()
+                return self._send(200, pg, "text/html; charset=utf-8")
+            except OSError:
+                pass
         pg = _PAGE.replace("__CSS__", _CSS).replace("__JS__", _JS)
         self._send(200, pg, "text/html; charset=utf-8")
+
+    def _static(self, path: str) -> None:
+        """serve Vite dist 里的静态资源（/assets/*、favicon 等）。"""
+        clean = path.lstrip("/")
+        fp = os.path.normpath(os.path.join(_UI_DIST, clean))
+        if not fp.startswith(_UI_DIST) or not os.path.isfile(fp):
+            return self._send(404, {"error": "not found"})
+        ext = os.path.splitext(fp)[1].lower()
+        ctype = {".js": "application/javascript; charset=utf-8",
+                 ".css": "text/css; charset=utf-8",
+                 ".svg": "image/svg+xml",
+                 ".png": "image/png", ".ico": "image/x-icon",
+                 ".html": "text/html; charset=utf-8"}.get(ext, "application/octet-stream")
+        self._send(200, open(fp, "rb").read(), ctype)
 
     def _body(self) -> dict:
         try:
@@ -1602,6 +1626,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         try:
             if path == "/":
                 return self._html()
+            if path.startswith("/assets/") or path in ("/favicon.svg", "/favicon.ico", "/vite.svg"):
+                return self._static(path)
             if path == "/api/info":
                 return self._info()
             if path == "/api/agents":
