@@ -127,7 +127,8 @@ class Scheduler:
     """Cron 任务调度器：tick 轮询 + sqlite 持久化 + 运行防重。"""
 
     def __init__(self, db_dir: str = ".", run_hook: Callable[[dict], Any] | None = None) -> None:
-        self._db = sqlite3.connect(f"{db_dir}/{_DB_NAME}", check_same_thread=False)
+        from aimate import storage
+        self._db = storage.connect(f"{db_dir}/{_DB_NAME}", check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.execute("""CREATE TABLE IF NOT EXISTS cron_jobs(
             id TEXT PRIMARY KEY, name TEXT NOT NULL, expr TEXT NOT NULL,

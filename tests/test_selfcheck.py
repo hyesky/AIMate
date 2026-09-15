@@ -111,6 +111,28 @@ try:
     check("wecom.badkey", False)
 except Exception:
     check("wecom.badkey", True)
+
+# 12. 持久化适配层（M1-12）：sqlite 默认 + 方言探测 + 未知/缺驱动报错
+import tempfile as _tf, os as _os
+from aimate import storage as _store
+check("storage.dialects", _store.available_dialects() == ["sqlite"]
+      or "sqlite" in _store.available_dialects())
+_d = _os.path.join(_tf.mkdtemp(), "s.sqlite3")
+_conn = _store.connect(_d)
+_conn.execute("create table if not exists t(x)")
+_conn.execute("insert into t values (7)")
+check("storage.sqlite", _conn.execute("select x from t").fetchone()[0] == 7)
+_conn.close()
+try:
+    _store.connect("", dialect="nosuch")
+    check("storage.baddialect", False)
+except ValueError:
+    check("storage.baddialect", True)
+try:
+    _store.connect("user=a", dialect="oceanbase")
+    check("storage.nodriver", False)
+except ConnectionError:
+    check("storage.nodriver", True)
 check("gate.semantic", not is_trivial_prompt("帮我查一下内网网关配置")
       and not is_trivial_prompt("根据 RAG 召回生成总结"))
 

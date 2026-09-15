@@ -66,7 +66,8 @@ class AccountStore:
         self._init_db()
 
     def _conn(self) -> sqlite3.Connection:
-        c = sqlite3.connect(self.path)
+        from aimate import storage
+        c = storage.connect(self.path)
         c.row_factory = sqlite3.Row
         return c
 

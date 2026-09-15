@@ -9,7 +9,7 @@
 - [x] 文档：README / architecture / compliance
 
 ## M1 — 内网可用（约 6–8 人月）
-- [ ] 持久化：SQLite → 达梦/人大金仓/OceanBase 适配层
+- [x] 持久化：SQLite → 达梦/人大金仓/OceanBase 适配层（aimate/storage.py 连接工厂+方言探测；sqlite 默认全绿；DDL/SQL 方言迁移为切库时已知边界）
 - [ ] 对话接入内网 LLM 网关（vLLM/MLX/国产），非骨架式调度
 - [ ] 完整 IM 接线：飞书（lark-oapi 完整实现）、企微、钉钉
 - [ ] 管理后端 Web 工作台（成员/授权/模型/知识/License）前端落地
